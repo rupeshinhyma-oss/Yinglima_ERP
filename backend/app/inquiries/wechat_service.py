@@ -74,15 +74,27 @@ class WeComService:
             raise
 
     def get_userid_by_mobile(self, mobile: str) -> str | None:
-        """Resolve a Chinese 11-digit mobile number to WeCom UserID."""
+        """Resolve a Chinese (+86) or Indian (+91) mobile number to WeCom UserID."""
         import httpx
 
-        # Clean mobile number (+86, spaces, hyphens)
-        clean_mobile = re.sub(r"\D", "", mobile)
-        if clean_mobile.startswith("86") and len(clean_mobile) == 13:
-            clean_mobile = clean_mobile[2:]
+        # Extract digits
+        raw = mobile.strip()
+        digits = re.sub(r"\D", "", raw)
 
-        if len(clean_mobile) != 11:
+        # Chinese mobile (11 digits starting with 1, or prefixed with 86)
+        clean_mobile: str | None = None
+        if digits.startswith("86") and len(digits) == 13:
+            clean_mobile = digits[2:]
+        elif len(digits) == 11 and digits.startswith("1"):
+            clean_mobile = digits
+        elif digits.startswith("91") and len(digits) == 12:
+            clean_mobile = f"+91{digits[2:]}"
+        elif len(digits) == 10 and digits[0] in "6789":
+            clean_mobile = f"+91{digits}"
+        elif raw.startswith("+"):
+            clean_mobile = raw
+
+        if not clean_mobile:
             return None
 
         try:
@@ -94,6 +106,16 @@ class WeComService:
                 if data.get("errcode") == 0 and data.get("userid"):
                     logger.info("Resolved mobile %s to WeCom UserID: %s", clean_mobile, data["userid"])
                     return data["userid"]
+
+                # If international +91 failed, try without +
+                if clean_mobile.startswith("+91"):
+                    alt_mobile = clean_mobile.replace("+", "")
+                    alt_resp = client.post(url, json={"mobile": alt_mobile}, headers={"User-Agent": "Yinglima-ERP/1.0"})
+                    alt_data = alt_resp.json()
+                    if alt_data.get("errcode") == 0 and alt_data.get("userid"):
+                        logger.info("Resolved mobile %s to WeCom UserID: %s", alt_mobile, alt_data["userid"])
+                        return alt_data["userid"]
+
                 logger.warning("WeCom getuserid failed for mobile %s: %s", clean_mobile, data)
         except Exception as exc:
             logger.error("Error resolving mobile %s to WeCom UserID: %s", clean_mobile, exc)
@@ -147,16 +169,17 @@ class WeComService:
         resolved_users: list[str] = []
         for u in to_users:
             u_clean = u.strip()
-            # If it looks like a phone number, try to resolve to WeCom UserID
+            # If already a valid WeCom UserID format without phone characters
             digits = re.sub(r"\D", "", u_clean)
-            if digits.startswith("86") and len(digits) == 13:
-                digits = digits[2:]
-            if len(digits) == 11 and digits.startswith("1"):
-                uid = self.get_userid_by_mobile(digits)
-                if uid:
-                    resolved_users.append(uid)
-                else:
-                    resolved_users.append(u_clean)
+            if not digits or (len(digits) < 7 and not u_clean.startswith("+")):
+                # Direct UserID (e.g. 'paws', 'prathameshbangar', 'ChenXianNing')
+                resolved_users.append(u_clean)
+                continue
+
+            # Try resolving phone number (Chinese or Indian)
+            uid = self.get_userid_by_mobile(u_clean)
+            if uid:
+                resolved_users.append(uid)
             else:
                 resolved_users.append(u_clean)
 

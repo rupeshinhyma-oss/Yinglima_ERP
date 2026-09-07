@@ -1,0 +1,4 @@
+search-path = ["."]
+infer-with-first-use = false
+python-interpreter-path = ".venv/Scripts/python.exe"
+site-package-path = [".venv/Lib/site-packages"]

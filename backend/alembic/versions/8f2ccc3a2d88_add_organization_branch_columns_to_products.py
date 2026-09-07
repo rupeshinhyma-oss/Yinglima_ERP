@@ -49,6 +49,24 @@ def upgrade() -> None:
     existing_fks = {fk["name"] for fk in inspector.get_foreign_keys("products") if fk.get("name")}
     existing_indexes = {ix["name"] for ix in inspector.get_indexes("products")}
 
+    if not inspector.has_table("master_companies"):
+        op.create_table(
+            "master_companies",
+            sa.Column("id", app.database.base.GUID(), primary_key=True),
+            sa.Column("name", sa.String(150), unique=True, nullable=False),
+            sa.Column("code", sa.String(50), unique=True, nullable=False),
+            sa.Column("description", sa.Text(), nullable=True),
+            sa.Column("branches", sa.JSON(), nullable=True),
+            sa.Column("status", sa.String(20), nullable=False, server_default="ACTIVE"),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("deleted_by", app.database.base.GUID(), nullable=True),
+        )
+        op.create_index("ix_master_companies_name", "master_companies", ["name"])
+        op.create_index("ix_master_companies_code", "master_companies", ["code"])
+        op.create_index("ix_master_companies_status", "master_companies", ["status"])
+
     if "organization_id" not in existing_cols:
         op.add_column("products", sa.Column("organization_id", app.database.base.GUID(), nullable=True))
     if "ix_products_organization_id" not in existing_indexes:

@@ -74,6 +74,9 @@ async def ensure_bucket_exists(bucket: str) -> bool:
     if not auth_key:
         return False
 
+    base_url = settings.supabase_base_url
+    bucket_url = f"{base_url}/storage/v1/bucket"
+
     headers = {
         "apikey": auth_key,
         "Authorization": f"Bearer {auth_key}",
@@ -136,6 +139,9 @@ async def upload_to_supabase(
 
     if not content_type:
         content_type = guess_content_type(filename)
+
+    base_url = settings.supabase_base_url
+    upload_url = f"{base_url}/storage/v1/object/{bucket}/{filename}"
 
     headers = {
         "apikey": auth_key,

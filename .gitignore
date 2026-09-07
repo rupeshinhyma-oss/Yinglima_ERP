@@ -1,6 +1,8 @@
 # Environment files
 .env
+.env*
 *.env
+*.env*
 !.env.example
 
 # Dependencies & Build
@@ -31,4 +33,7 @@ Thumbs.db
 # Uploads
 backend/uploads/
 uploads/
+
+# Binaries
+*.exe
 

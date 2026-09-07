@@ -253,50 +253,72 @@ async def extract_supplier_quotation(
         "temperature": 0.1,
     }
 
-    async with httpx.AsyncClient(timeout=45.0) as client:
-        resp = await client.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-        )
+    import asyncio
 
-        if resp.status_code != 200:
-            logger.error("OpenAI API returned error %d: %s", resp.status_code, resp.text)
-            raise RuntimeError(f"OpenAI API error ({resp.status_code}): {resp.text}")
+    res_data = None
+    max_retries = 3
+    last_err: Exception | None = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=45.0) as client:
+                resp = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
 
-        res_data = resp.json()
-        content_str = res_data["choices"][0]["message"]["content"]
-        parsed_dict = json.loads(content_str)
-        parsed_dict["provider_used"] = f"openai-{model_name}"
+                if resp.status_code != 200:
+                    logger.error("OpenAI API returned error %d on attempt %d: %s", resp.status_code, attempt, resp.text)
+                    if attempt < max_retries and resp.status_code in [429, 500, 502, 503, 504]:
+                        await asyncio.sleep(attempt * 2)
+                        continue
+                    raise RuntimeError(f"OpenAI API error ({resp.status_code}): {resp.text}")
 
-        # Normalize single vs multi-item fallback
-        quotes_list = parsed_dict.get("quotes") or []
-        if not quotes_list and parsed_dict.get("unit_price"):
-            quotes_list.append({
-                "product_name": product_name,
-                "product_code": product_code,
-                "unit_price": parsed_dict.get("unit_price"),
-                "currency": parsed_dict.get("currency") or "CNY",
-                "quantity": parsed_dict.get("quantity") or target_quantity,
-                "earliest_available_date": parsed_dict.get("earliest_available_date"),
-                "lead_time_days": parsed_dict.get("lead_time_days"),
-                "price_terms": parsed_dict.get("price_terms"),
-                "payment_terms": parsed_dict.get("payment_terms"),
-                "remarks": parsed_dict.get("remarks"),
-            })
-            parsed_dict["quotes"] = quotes_list
-        elif quotes_list and not parsed_dict.get("unit_price"):
-            first_q = quotes_list[0]
-            parsed_dict["unit_price"] = first_q.get("unit_price")
-            parsed_dict["currency"] = first_q.get("currency") or "CNY"
-            parsed_dict["quantity"] = first_q.get("quantity")
-            parsed_dict["earliest_available_date"] = first_q.get("earliest_available_date")
-            parsed_dict["lead_time_days"] = first_q.get("lead_time_days")
-            parsed_dict["price_terms"] = first_q.get("price_terms")
-            parsed_dict["payment_terms"] = first_q.get("payment_terms")
-            parsed_dict["remarks"] = first_q.get("remarks")
+                res_data = resp.json()
+                break
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError) as net_err:
+            last_err = net_err
+            logger.warning("OpenAI network connection error on attempt %d/%d: %s", attempt, max_retries, str(net_err))
+            if attempt < max_retries:
+                await asyncio.sleep(attempt * 2)
+                continue
+            raise RuntimeError(f"OpenAI connection failed after {max_retries} attempts: {last_err}") from last_err
 
-        return ExtractedQuotation.model_validate(parsed_dict)
+    if not res_data:
+        raise RuntimeError("OpenAI returned no response data.")
+
+    content_str = res_data["choices"][0]["message"]["content"]
+    parsed_dict = json.loads(content_str)
+    parsed_dict["provider_used"] = f"openai-{model_name}"
+
+    # Normalize single vs multi-item fallback
+    quotes_list = parsed_dict.get("quotes") or []
+    if not quotes_list and parsed_dict.get("unit_price"):
+        quotes_list.append({
+            "product_name": product_name,
+            "product_code": product_code,
+            "unit_price": parsed_dict.get("unit_price"),
+            "currency": parsed_dict.get("currency") or "CNY",
+            "quantity": parsed_dict.get("quantity") or target_quantity,
+            "earliest_available_date": parsed_dict.get("earliest_available_date"),
+            "lead_time_days": parsed_dict.get("lead_time_days"),
+            "price_terms": parsed_dict.get("price_terms"),
+            "payment_terms": parsed_dict.get("payment_terms"),
+            "remarks": parsed_dict.get("remarks"),
+        })
+        parsed_dict["quotes"] = quotes_list
+    elif quotes_list and not parsed_dict.get("unit_price"):
+        first_q = quotes_list[0]
+        parsed_dict["unit_price"] = first_q.get("unit_price")
+        parsed_dict["currency"] = first_q.get("currency") or "CNY"
+        parsed_dict["quantity"] = first_q.get("quantity")
+        parsed_dict["earliest_available_date"] = first_q.get("earliest_available_date")
+        parsed_dict["lead_time_days"] = first_q.get("lead_time_days")
+        parsed_dict["price_terms"] = first_q.get("price_terms")
+        parsed_dict["payment_terms"] = first_q.get("payment_terms")
+        parsed_dict["remarks"] = first_q.get("remarks")
+
+    return ExtractedQuotation.model_validate(parsed_dict)

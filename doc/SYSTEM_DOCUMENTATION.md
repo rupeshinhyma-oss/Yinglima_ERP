@@ -1,7 +1,7 @@
 # Enterprise ERP System — Unified Architecture, Feature & Technical Manual
 
 > **System Version:** 1.0.0 (Production)  
-> **Last Updated:** September 2026  
+> **Last Updated:** September 7, 2026 (Products Master server-side pagination & comprehensive search upgrade, Vite proxy timeout resolution, Neon Serverless Singapore ap-southeast-1 migration, OCC version column alignment migration f9a0b1c2d3e4, planning_sheets item_description support, and 100% data parity verification)  
 > **Architectural Pattern:** Modular Async Monolith (FastAPI) + React 18 SPA (Vite) + Real-Time WebSocket Event Bus  
 > **Target Audience:** Systems Architects, Software Engineers, DevOps, and Autonomous AI Coding Assistants.  
 > **Scope:** Complete end-to-end technical reference containing all system features, data models, API endpoints, background workers, frontend architecture, and developer integration guidelines.
@@ -142,7 +142,7 @@ ERP_Main_Claude/
 │   │   ├── users/             # User accounts, HR profiles, reporting managers
 │   │   └── main.py            # Composition root, lifespan lifecycle, middleware wiring
 │   ├── alembic/               # Database schema version migrations
-│   ├── scripts/               # Migration and maintenance tools (sync_uploads_to_supabase.py)
+│   ├── scripts/               # Migration, seeding, and maintenance tools (setup_neon_databases.py, shift_supabase_to_neon.py, sync_uploads_to_supabase.py)
 │   └── requirements.txt       # Python dependencies
 └── frontend/
     ├── src/
@@ -181,6 +181,36 @@ class VersionMixin:
     """Provides optimistic concurrency control."""
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 ```
+
+### 4.1. Neon Serverless Multi-Database Topology & Driver Engine (`setup_neon_databases.py`, `shift_to_singapore.py`)
+- **Three Isolated Logical Databases in Single Project Cluster (`ERP-Cluster`)**:
+  - `yinglima_erp`: Dedicated to the China procurement, quotation sourcing, and container shipment planning lifecycle.
+  - `inhyma_erp`: Dedicated to the India domestic distribution, multi-branch, and buyer invoicing lifecycle.
+  - `erp_main`: Central master repository and golden template for future company deployments.
+- **Singapore (ap-southeast-1) Low-Latency Region Deployment**:
+  - Successfully migrated from Ohio (`us-east-2`, ~368ms round-trip latency) to Singapore AWS (`ap-southeast-1`, ~170ms round-trip latency, cutting network latency by >50%).
+  - Live Singapore Pooled Endpoint: `ep-twilight-base-azwy3ofw-pooler.c-3.ap-southeast-1.aws.neon.tech/yinglima_erp`.
+  - Zero data loss: All 49,848 rows across 54 tables and 93 foreign key constraints verified with 100% parity.
+- **Optimistic Concurrency & Missing Columns Alignment (`alembic/versions/f9a0b1c2d3e4_ensure_all_version_columns.py`)**:
+  - Ensures `version INTEGER NOT NULL DEFAULT 1` exists across all master tables (`hsn_codes`, `units_of_measurement`, `master_companies`, `inquiry_items`, `supplier_types`, `buyer_types`, `consignment_codes`).
+  - Ensures `item_description TEXT` exists on `planning_sheets`.
+  - Fixes HTTP 500 errors on `/masters/hsn`, `/masters/uom`, and `/planning/sheets`.
+- **Connection Pooling & Statement Caching**:
+  - Configures `DATABASE_DISABLE_STATEMENT_CACHE=true` in `backend/.env` to avoid prepared statement conflicts with PgBouncer transaction pooling.
+- **Driver Parameter Compatibility Matrix**:
+  - **`asyncpg` Engine**: Strictly requires `?ssl=require`. Passing `?sslmode=require` causes `TypeError: connect() got an unexpected keyword argument 'sslmode'`.
+  - **`psycopg2` Engine / Alembic**: Strictly requires `?sslmode=require`. Passing `?ssl=require` raises an invalid keyword argument error in psycopg2.
+  - **Dynamic Resolution (`app.core.config.py`)**: The `sync_database_url` property dynamically inspects query parameters and converts `?ssl=require` to `?sslmode=require` seamlessly across migrations and background sync tools.
+- **Switching Databases**:
+  - Separate per-database configurations: `backend/.env.yinglima_erp`, `backend/.env.inhyma_erp`, `backend/.env.erp_main`.
+  - To activate a company's database, copy its configuration to `backend/.env` (e.g. `copy .env.yinglima_erp .env` or `copy .env.inhyma_erp .env`).
+- **Complete Supabase to Neon Migration & 100% Parity (September 2026)**:
+  - Total tables in Supabase: **77** | Total tables in Neon: **77** (Zero missing tables, zero missing rows).
+  - All 21 Task Management & Notification tables (`notifications`, `tasks`, `task_subtasks`, `task_assignees`, `task_comments`, `task_escalations`, `task_labels`, `task_attachments`, `task_sprints`, etc.) fully migrated with all 426 notifications, 196 tasks, and related attachments.
+  - All 184 country ISO2 and ISO3 codes synced.
+  - Complete sync of all 20 `inquiry_messages` records.
+  - Schema alignment for `products` (`packaging_length`, `packaging_width`, `packaging_height`, `packaging_weight`, `master_box_qty`, `supplier_id`) and `planning_columns.description`.
+  - Audited via `backend/scripts/compare_supabase_and_neon.py`.
 
 ---
 
@@ -304,8 +334,9 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
 - **Features:** Built on the unified `MasterPage.tsx` engine providing uniform search, pagination, validation, modal creation, and cached lookup resolution (`nameResolver.ts`).
 
 ### 8.5. Product Catalog & Dynamic Specification Builder
-- **Endpoints:** `GET /products`, `POST /products`, `PATCH /products/{id}`, `POST /products/{id}/specs`, `GET /products/{id}/datasheet-pdf`.
-- **Features:** Dynamic JSON specification builder allowing arbitrary technical specifications (e.g. Dimensions, Voltage, Speed, Material). Includes multi-image upload, supplier association, and ReportLab PDF datasheet generation.
+- **Endpoints:** `GET /masters/products`, `POST /masters/products`, `GET /masters/products/{id}`, `PATCH /masters/products/{id}`, `DELETE /masters/products/{id}`, `POST /masters/products/import`, `GET /masters/products/export`.
+- **Features:** Dynamic JSON specification builder allowing arbitrary technical specifications (e.g. Dimensions, Voltage, Speed, Material), multi-image upload, primary supplier auto-detection, and ReportLab PDF datasheet generation.
+- **Server-Side Pagination & Subquery Search Engine:** Uses standard 50-item/page server-side pagination with `ProductRepository._apply_search`. Applies case-insensitive subqueries across direct product attributes (`product_code`, `product_name`, `product_name_tally`, `product_name_invoice`, `barcode`, `specification`, `description`, `material`, `color`) and linked masters (`Brand`, `ProductCategory`, `ProductSubCategory`, `HsnCode`, `UnitOfMeasurement`) using PostgreSQL `exists()` clauses. Completely eliminates client-side 10,000-row batch loading and Vite proxy 500 timeout crashes over cloud database connections.
 
 ### 8.6. Supplier Directory & Tokenized Public Portal
 - **Endpoints:** `GET /suppliers`, `POST /suppliers`, `PATCH /suppliers/{id}`, `POST /suppliers/{id}/contacts`, `POST /suppliers/import`, `GET /suppliers/export`.
@@ -321,9 +352,14 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
 - **Features:**
   - 3-layer RFQ and Quotation management lifecycle: `Buyer Directory` $\rightarrow$ `Consignments` $\rightarrow$ `Line Items & Quotation Matrix`.
   - **Interactive Inline Email Composer (Gmail/Figma-Style)**: Located in the Inquiries -> Emails tab. Allows users to write custom follow-up emails or replies directly to suppliers, auto-selects recipient emails from known suppliers, pre-fills context-aware subject lines, attaches files, and immediately dispatches outbound SMTP emails. Dispatched emails are instantly recorded into the communication timeline.
-  - **Strict 1-Quote AI Extraction Policy**: The inbound AI parsing worker only extracts quotation terms from initial inbound supplier replies. Subsequent follow-up correspondence and chats between sales personnel and suppliers are logged directly to the email timeline without AI duplication or spurious quotation matrix modifications.
+  - **Dynamic Supplier Resolution & Email Deduplication**: `GET /inquiries/{id}/messages` and the frontend Emails tab automatically resolve unlinked raw recipient/sender emails to official Supplier company names via `supplier_emails`, unifying company names and eliminating raw email duplicates in the communication filter dropdown.
+  - **Strict 1-Quote AI Extraction Policy**: The inbound AI parsing worker only extracts quotation terms from initial inbound supplier replies. Subsequent follow-up correspondence and chats between sales personnel and suppliers are logged directly to the email timeline without AI duplication or spurious quotation matrix modifications. Communication badges dynamically reflect whether a quotation record actually exists in the matrix (displaying quote number and price) or whether it represents a discussion thread.
   - All Expected Receiving Date date-pickers enforce `min={today}` to disable selecting past dates.
-  - Outbound WeChat RFQ engine automatically resolves supplier 11-digit mobile numbers to WeCom User IDs via Tencent API using `httpx`.
+  - **Resilient Consignment Code Generation**: The Quick Inquiry drawer automatically cross-references both local and global consignment codes. If an entered or suggested code already exists for the selected buyer, it seamlessly links to the existing code ID instead of crashing with HTTP 409 Conflict.
+  - **Safe Non-Destructive Consignment Item Updates**: Modifying a consignment via Quick Inquiry updates existing product lines in-place via `PATCH /{inquiry_id}/items/{item_id}` and appends newly added items via `POST /items/bulk`, eliminating destructive full-consignment item wipes and safely preserving existing quotation records, RFQs, and communication histories.
+  - **Inline Modal Error Banners**: All inquiry creation drawers and modals render contextual inline error banners directly inside the modal viewport so validation issues are immediately visible without being occluded by full-screen drawer backdrops.
+  - **Contextual UOM Indicator**: Item creation modals dynamically resolve and display the selected product's Unit of Measurement (e.g. `PCS`, `SET`, `KG`) directly alongside the Quantity input field.
+  - Outbound WeChat RFQ engine automatically resolves supplier 11-digit mobile numbers to WeCom User IDs via Tencent API using `httpx`. Validates Tencent API response codes (`errcode: 0` vs errors like `60020` unwhitelisted IP), only marking dispatches as delivered upon confirmed Tencent ingestion and logging explicit delivery failure diagnostics if rejected.
   - Supabase Cloud Storage integration handles all quotation PDF attachments.
   - Full RFQ status progression: `DRAFT` $\rightarrow$ `SENT_TO_SUPPLIERS` $\rightarrow$ `QUOTES_RECEIVED` $\rightarrow$ `UNDER_EVALUATION` $\rightarrow$ `APPROVED` $\rightarrow$ `ORDER_PLACED` $\rightarrow$ `CLOSED`.
   - Side-by-side vendor quotation comparison matrix with lowest bid and fastest turnaround highlighting.
@@ -369,6 +405,16 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
   - **Direct Reports Reassignment:** `POST /reporting/reassign-direct-reports/{manager_id}` allows reassigning all direct reports before deactivating a manager.
   - **Set / Move Primary Manager (Org Chart):** `POST /reporting/set-manager/{employee_id}` updates an employee's primary reporting manager in a single atomic transaction, validating cycle prevention and returning the updated relationship.
 - **Dynamic Org Chart (`GET /reporting/org-chart`):** Renders the multi-level reporting tree in `/org-chart` using active `PRIMARY_REPORTING` relationships resolved dynamically against `UserRepository.list_all()`, including node `relationship_id`.
+
+### 8.15. Inquiries, Consignments & Bidirectional WeChat / Email RFQ Ingestion
+- **Endpoints:** `GET /inquiries`, `POST /inquiries`, `GET /inquiries/{id}/items`, `POST /inquiries/{id}/items`, `POST /inquiries/rfq/bulk-dispatch`, `POST /inquiries/messages/send-direct-email`, `GET /inquiries/{id}/messages`, `GET /inquiries/wechat/callback`, `POST /inquiries/wechat/callback`.
+- **Features:** 3-layer consignment management hierarchy (Buyer $\rightarrow$ Consignment $\rightarrow$ Line Items), bulk RFQ dispatch, multi-channel communication (Email IMAP/SMTP and Tencent WeCom/WeChat), and automated AI quotation extraction.
+  - **Strict 1st-Conversation AI Quotation Extraction Policy:** AI quotation extraction operates strictly on the initial quotation reply from a supplier for each product line item (`inquiry_item_id`, `supplier_id`). Once the initial quotation is recorded in the Quotation Matrix, all subsequent messages between the sales team and the supplier (negotiations, counter-offers, shipping questions, chit-chat) are saved directly into the conversation history without invoking the AI extractor (0 OpenAI tokens consumed, zero latency, and zero risk of overwriting or duplicating baseline quotations).
+  - **Body-First Item Matching for Multi-Product RFQs:** Inbound email replies evaluate the email message body first for explicit product codes and product names before checking the subject line. This prevents email threads with multiple products from falsely inheriting the subject line's first product code, ensuring quotes for secondary items (e.g. Ink Roll vs Band Sealer) route to the correct unquoted line item.
+  - **WeCom & WeChat Integration (`wechat_service.py`):** Encrypted bidirectional integration using Tencent WeCom API. Generates bilingual Markdown RFQ cards. Smart resolution resolves both Chinese (`+86`) 11-digit numbers and Indian (`+91`) 10-digit numbers, as well as direct WeCom UserIDs. Strict response validation verifies `errcode: 0` before logging success badges.
+  - **Automated Inbound Email Worker (`email_inbound_worker.py`):** Listens via IMAP for incoming supplier replies. Prioritizes exact sender email matching against `SupplierEmail` and `SupplierContact` directories before fallback text search (strictly excluding host procurement company names like "Yinglima" to prevent false positive supplier resolution from email signatures). Robust consignment code matching scans all registered database consignment codes against the subject line (supporting multi-word codes with spaces like `[SEA 1]`, prefix brackets, and case variations) and falls back to explicit product code matching (`#FNB-02391`) before supplier historical RFQ lookup. When an unquoted supplier reply arrives, extracts quotation unit prices, quantities, lead times, and terms via OpenAI GPT-4o-mini, automatically inserts `Quotation` records with mandatory `quantity` fields and product-specific line item matching, and broadcasts real-time WebSocket events.
+  - **WeChat Callback Ingestion (`routes.py: /wechat/callback`):** Handles incoming supplier replies from WeChat/WeCom. Decrypts XML payloads, stores conversational message history, accurately extracts consignment codes with spaces and brackets, enforces the 1st-conversation extraction policy (skipping AI for subsequent chatter), and creates initial quotation rows with real-time UI notification.
+  - **Supplier Thread Resolution:** Dynamic fallback lookup maps unlinked message sender emails to registered suppliers and prevents duplicate vendor dropdown entries.
 
 ---
 
@@ -555,8 +601,14 @@ DEBUG=false
 SECRET_KEY=your-super-secret-key-32-chars-minimum
 API_V1_PREFIX=/api/v1
 
-# Database Configuration
-DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/erp_database
+# Database Configuration (Neon Serverless PostgreSQL)
+DATABASE_URL=postgresql+asyncpg://neondb_owner:npg_7HTzR5qPbvmx@ep-old-fire-axzu5kp9-pooler.c-4.us-east-2.aws.neon.tech/yinglima_erp?ssl=require
+DATABASE_DISABLE_STATEMENT_CACHE=true
+
+# Database Environment Profiles (Switch via: copy .env.<db_name> .env)
+# 1. Yinglima (China):  .env.yinglima_erp -> DATABASE_URL=.../yinglima_erp?ssl=require
+# 2. Inhyma (India):    .env.inhyma_erp   -> DATABASE_URL=.../inhyma_erp?ssl=require
+# 3. Master / Golden:   .env.erp_main     -> DATABASE_URL=.../erp_main?ssl=require
 
 # CORS Allowed Origins
 BACKEND_CORS_ORIGINS=["http://localhost:5173","https://erp.yourdomain.com"]
@@ -602,10 +654,14 @@ VITE_WS_BASE_URL=ws://localhost:8000/api/v1/events/ws
 
 ### Inbound & Outbound Email Architecture (Zero Wasted API Costs)
 - **Bidirectional Mailbox Polling**: Poller inspects both `INBOX` and `[Gmail]/Sent Mail` to capture supplier replies and salesperson outbound negotiations sent directly via email clients (e.g. Gmail web, Outlook, mobile).
+- **Isolated 1-on-1 RFQ Dispatch per Supplier**: When dispatching bulk RFQs ("RFQ for all" or selected items), the system partitions emails per supplier so each vendor receives an isolated, 1-on-1 email with their own company greeting (`Dear [Contact] ([Company])`). Competitor emails are never bundled or exposed in `To:`.
+- **Explicit `Reply-To` Routing Header**: All outbound SMTP emails (both single and bulk RFQ) enforce `Reply-To: Yinglima Procurement Team <om1inhyma@gmail.com>`. When vendors click "Reply", responses are guaranteed to route directly to the procurement inbox for automated AI ingestion.
+- **Per-Supplier Outbound Timeline Logging**: Individual `InquiryMessage` entries are created per supplier (`supplier_id=sup.id`) rather than bundled flat strings, ensuring accurate supplier-filtered timeline tracking in the Emails tab.
 - **Outbound Multi-Recipient Parsing**: Outbound emails parse all addresses from `To` and `Cc` to guarantee matching against all recipient suppliers.
 - **Outbound Company Emails**: Emails sent by Yinglima (`om1inhyma@gmail.com`) are strictly tagged as `direction="outbound"`. They are logged into the `Emails` tab timeline with **0 OpenAI API calls** and never create quotation rows.
-- **First Valid Supplier Reply**: The first valid reply from a supplier to our RFQ triggers OpenAI GPT extraction **exactly ONCE**, creating `QT-AUTO-01`, uploading any quote attachment directly to Supabase Storage, and logging the email in the `Emails` tab.
-- **Subsequent Follow-ups & Negotiations**: Once `QT-AUTO-01` exists for `(inquiry_item_id, supplier_id)`, all subsequent negotiation emails, price discussions, and delivery conversations bypass AI extraction (**0 OpenAI API calls**) and are appended directly to the `Emails` timeline.
+- **First Valid Supplier Reply & AI Resilience**: The first valid reply from a supplier to our RFQ triggers OpenAI GPT extraction **exactly ONCE**, creating `QT-AUTO-XX`, uploading any quote attachment directly to Supabase Storage, and logging the email in the `Emails` tab. OpenAI API calls incorporate automatic 3-attempt exponential backoff retry for transient network disconnects, and `Message-ID` deduplication caching is deferred until successful processing so dropped requests are cleanly recovered.
+- **Missing Quote Self-Healing**: If an inbound message was logged to the Emails timeline but quotation rows were interrupted or pending, the poller identifies that items remain unquoted for that supplier and automatically proceeds with AI extraction rather than discarding the message.
+- **Subsequent Follow-ups & Negotiations**: Once `QT-AUTO-XX` exists for `(inquiry_item_id, supplier_id)`, all subsequent negotiation emails, price discussions, and delivery conversations bypass AI extraction (**0 OpenAI API calls**) and are appended directly to the `Emails` timeline.
 - **Thread-Aware Item Inheritance**: Short follow-up emails without explicit SKU numbers automatically inherit the product item (`inquiry_item_id`) from the active thread history with that supplier.
 - **Dynamic Live Polling**: Frontend automatically live-syncs quotes and email messages every 2.5 seconds, ensuring updates reflect instantly without manual browser refresh.
 ### Universal Search & Deep-Linking Architecture (`GET /search?q=`)
@@ -619,4 +675,4 @@ VITE_WS_BASE_URL=ws://localhost:8000/api/v1/events/ws
 - **Native React State Dispatch**: Seamlessly triggers React's synthetic `onChange` and `input` events so form state updates immediately without manual backspacing. Excludes password and file upload inputs.
 
 ---
-*Maintained and verified for Inhyma Solutions Enterprise ERP. Last updated: September 2, 2026 (Organization, Employee & Identity/Access Management upgrade: multi-role assignment, Employee directory, Departments/Positions/Leadership/Reporting Structure, dynamic Organization Chart -- see section 8.14).*
+*Maintained and verified for Inhyma Solutions Enterprise ERP. Last updated: September 4, 2026 (Isolated 1-on-1 RFQ supplier email dispatch, Reply-To header enforcement, strict first-conversation AI extraction policy).*

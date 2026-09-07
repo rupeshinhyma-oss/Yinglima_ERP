@@ -373,6 +373,10 @@ Manage complete vendor team directory:
 - [ ] Create a product, enter Length: `100`, Width: `50`, Height: `40`. Verify CBM calculates to `0.200000`.
 - [ ] Select HSN code with 13% Refund VAT and confirm Refund VAT % field auto-populates with `13`.
 - [ ] Click "Download PDF Datasheet" (`GET /api/v1/products/{id}/datasheet-pdf`) and verify ReportLab PDF generates.
+- [ ] Open `/masters/products` and verify the table loads under 3 seconds with standard pagination (`Showing 1-50 of 3556`, `Page 1 of 72`) and zero 500 error banners.
+- [ ] Navigate through pages (`Next`, `Page 2`, `Page 3`) and verify 50 products render reliably per page.
+- [ ] Filter by Category, Sub-Category, or Brand using the toolbar dropdowns; confirm the table updates immediately with matching filtered count.
+- [ ] Test Comprehensive Server Search: Search by Product Code (`DAR-01849`), Product Name (`Ink Cup`), Brand Name (`Supreme`), or Category; confirm matching items display instantly without proxy timeout.
 
 ---
 
@@ -468,15 +472,24 @@ Manage complete vendor team directory:
   7. **ORDER VALUE:** Financial sum with currency indicator.
   8. **ACTIONS:** Drilldown arrow (`➔`), Quick Add Item button.
 - **Top Actions:**
-  - ⚡ **`+ Quick Add Inquiry` Modal:**
+  - ⚡ **`+ Quick Add Inquiry` Drawer:**
     - **Buyer Company** (*Required*): Searchable dropdown from `/buyers`.
-    - **Consignment Code** (*Required*): Dropdown of existing codes or type new (e.g. `FB1`).
+    - **Consignment Code** (*Required*): Dropdown of existing codes or type new (e.g. `FB1`). Automatically cross-references existing codes to reuse matching IDs and prevent `HTTP 409 Conflict` errors.
+    - **Inline Error Alert Banner**: Displays red contextual alert banner inside the drawer for immediate feedback on validation failures or conflict warnings.
+    - **Non-Destructive Item Editing**: When modifying an existing consignment, updates existing items in-place via `PATCH /{inquiry_id}/items/{item_id}` and appends new rows via `POST /items/bulk`, safely preserving existing quotation records, RFQs, and WeChat/Email chat histories.
     - **Product Item** (*Required*): Type-ahead search with Product Code + Name + Category from Product Master.
     - **Quantity** (*Required*): Number input.
     - **Target Price**: Buyer's budgeted price.
     - **Brand Preference**: Preferred manufacturer/brand.
     - **Product Specs Remarks**: Custom technical or packaging requirements.
     - **Action Buttons:** `Cancel`, `Save Item`, `Save & Add Another Item`.
+  - ➕ **`+ Add Item` Modal:**
+    - **Buyer Company**: Scoped to current buyer context.
+    - **Consignment Code** (*Required*): Scoped strictly to the selected buyer.
+    - **Product Name** (*Required*): Auto-resolves and displays dynamic Unit of Measurement (e.g. `PCS`, `SET`, `KG`, `METER`) next to the Quantity input label.
+    - **Quantity** (*Required*): Number input (> 0).
+    - **Brand Preference & Remarks**: Optional text fields.
+    - **Status**: `Proposed` or `Approved`.
   - ➕ **`+ New Consignment` Modal:**
     - **Buyer Company** (*Required*): Select buyer.
     - **Consignment Code** (*Required*): e.g. `FB1`, `FB2`, `MUM-2026-AUG`.
@@ -512,6 +525,9 @@ Manage complete vendor team directory:
     - Multi-row product picker from Product Master with live search. Check multiple products and enter quantities simultaneously.
   - 📤 **`Dispatch Bulk RFQs` Button & Modal:**
     - **Select Suppliers**: Multi-select supplier picker filtered by relevant product categories or all suppliers.
+    - **Isolated 1-on-1 Supplier Dispatch**: The backend partitions recipients per supplier so each vendor receives an isolated, private email. Competitor email addresses are never bundled or exposed in `To:`.
+    - **Guaranteed `Reply-To` Header**: Enforces `Reply-To: Yinglima Procurement Team <om1inhyma@gmail.com>` on all outbound emails, ensuring supplier replies route cleanly back to the automated AI ingestion inbox.
+    - **Per-Supplier Timeline Logging**: Logs separate outbound `InquiryMessage` timeline entries for each recipient supplier (`supplier_id = sup.id`).
     - **Dispatch Channels**: Select `Email (IMAP/SMTP)` and/or `Tencent WeCom / WeChat`.
     - **RFQ Custom Subject & Message**: Pre-filled template with line item details and specifications.
     - **Expected Due Date**: Quotation submission deadline.
@@ -530,8 +546,12 @@ Manage complete vendor team directory:
     - In-drawer preview, zoom, and direct download links.
   - 💬 **`Two-Way Communication Timeline & Interactive Email Composer` (Emails Tab):**
     - Chronological feed of all inbound/outbound emails and WeChat messages for this consignment / product.
-    - **Supplier Thread Filter**: Dropdown allowing users to isolate conversations with specific suppliers (e.g. `Wenzhou Brother Machinery`) or view all combined.
-    - **AI Auto-Extraction Indicator**: Displays `QT-AUTO-01` badge when OpenAI GPT-4o automatically parsed an incoming quotation. Subsequent negotiation emails bypass AI (**0 API cost**).
+    - **Supplier Thread Filter & Company Resolution**: Dropdown automatically maps recipient/sender email addresses to their official supplier company names (e.g. mapping `om2inhyma@gmail.com` -> `Yinglima Packaging Machinery Co., Ltd.`), deduplicates suppliers so company names and emails are never split, and cleanly isolates communication threads per vendor.
+    - **Accurate AI Auto-Extraction & Discussion Badges**:
+      - **Initial Quotation Reply**: On the first incoming quotation message from a supplier for an item, AI extracts commercial pricing and terms, creating `QT-AUTO-XX` in the Quotation Matrix. Displays: `✨ Auto-Parsed with AI & Recorded in Quotation Matrix (QT-AUTO-XX • $Price)`.
+      - **Subsequent Sales / Negotiation Chatter**: Once the initial quote exists, subsequent conversations between the sales team and supplier (discounts, delivery questions, terms) bypass AI extraction completely (0 OpenAI tokens). Displays: `💬 Inbound Discussion / Negotiation Thread` (or `💬 Supplier WeChat Discussion`).
+      - **Multi-Product RFQ Routing**: When an RFQ contains multiple products (e.g. Band Sealer & Ink Roll), the inbound worker checks message bodies first to ensure quotes for secondary items route to their respective line items without colliding or being blocked by the first item's quote.
+      - **Multi-Supplier & Cross-Consignment Isolation**: Supplier A, B, and C replies remain strictly isolated side-by-side in the Quotation Matrix, and quotes for identical products in different consignments (e.g. FB1 vs INH1) never cross-leak.
     - **Interactive Inline Email Composer (Gmail/Figma-Style)**:
       - Embedded directly at the bottom of the Email timeline.
       - **"To:" Recipient Field**: Quick dropdown of suppliers or free-text comma-separated email entry.
@@ -555,7 +575,10 @@ Manage complete vendor team directory:
 
 ### Test Cases for Inquiries Module
 - [ ] In Layer 1, click `+ Quick Add Inquiry`, select Buyer, enter Consignment `FB1`, pick Product, enter Quantity `100`, save. Verify item is created.
-- [ ] Drill down to Layer 2 and Layer 3, click `Dispatch Bulk RFQs`, select 2 suppliers, dispatch. Verify RFQ records are generated with public tokens.
+- [ ] Drill down to Layer 2 and Layer 3, click `Dispatch Bulk RFQs`, select 2 suppliers, dispatch. Verify RFQ records are generated with public tokens, verify each supplier receives an isolated 1-on-1 email without competitor emails in `To:`, and verify distinct `InquiryMessage` entries are created per supplier.
+- [ ] In the RFQ dispatch drawer, when selecting the WeChat channel, verify the backend validates Tencent's response code (`errcode: 0` vs rejection). Verify the service resolves both Chinese (`+86`) and Indian (`+91`) mobile numbers, as well as direct WeCom UserIDs.
+- [ ] Send an RFQ to a supplier, simulate/receive an email reply containing a unit price with spaces in the consignment code (e.g. `[SEA 1]`) and product codes (e.g. `#FNB-02391`), and verify that `email_inbound_worker` accurately maps to the matching consignment line item, extracts the quote via OpenAI, populates `quantity`, and generates a quotation row in the Quotations tab.
+- [ ] Simulate or receive an incoming WeChat reply from a supplier; verify `/api/v1/inquiries/wechat/callback` parses the reply, extracts unit price and terms via AI, and automatically creates or updates the quotation row with real-time WebSocket broadcast.
 - [ ] Switch to the **Emails** tab in Layer 3, verify the timeline displays historical RFQs and replies.
 - [ ] In the **Inline Email Composer** at the bottom of the Emails tab, select a supplier from the dropdown, type a message body, and click `✈️ Send Email`. Verify the email is dispatched via SMTP and instantly appears in the conversation thread with the `Outbound Email ↗` badge.
 - [ ] Open Public Quote Portal (`/quote/:token`) for a supplier, submit unit price `¥4500` with PDF quote sheet upload.

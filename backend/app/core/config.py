@@ -102,7 +102,7 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------
     # Database
     # -------------------------------------------------------------------
-    DATABASE_URL: PostgresDsn = Field(
+    DATABASE_URL: PostgresDsn | str = Field(
         default="postgresql+asyncpg://erp_user:erp_password@localhost:5432/erp_db",
         description="Async SQLAlchemy connection string, e.g. "
         "postgresql+asyncpg://user:pass@host:5432/dbname",
@@ -329,7 +329,12 @@ class Settings(BaseSettings):
         separate URLs, we derive the sync URL from the single async source
         of truth.
         """
-        return str(self.DATABASE_URL).replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+        url = str(self.DATABASE_URL).replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+        if "?ssl=" in url:
+            url = url.replace("?ssl=", "?sslmode=")
+        elif "&ssl=" in url:
+            url = url.replace("&ssl=", "&sslmode=")
+        return url
 
 
 @lru_cache

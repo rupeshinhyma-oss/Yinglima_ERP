@@ -79,12 +79,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Eagerly initialize the engine to fail fast on misconfiguration.
     engine = get_engine()
-    try:
-        from sqlalchemy import text
-        async with engine.begin() as conn:
-            await conn.execute(text("ALTER TABLE products ADD COLUMN organization_ids JSON;"))
-    except Exception:
-        pass
 
     # Start the background queue worker (Phase 4).
     worker = get_worker()
@@ -252,4 +246,4 @@ def _mount_frontend(app: FastAPI) -> None:
         return FileResponse(index_file)
 
 
-app = create_application()
+app = create_application()

@@ -165,7 +165,7 @@ def _parse_search_query_param(search: str | None) -> list[ColumnSearchFilter] | 
 
 
 async def _broadcast(
-    sheet_id: uuid.UUID, event_type: str, payload: dict, *, current_user: CurrentUser, service: PlanningService
+    sheet_id: uuid.UUID, event_type: str, payload: Any, *, current_user: CurrentUser, service: PlanningService
 ) -> None:
     """
     Commit the write, THEN fan out a change to every other tab watching this sheet.
@@ -595,7 +595,7 @@ async def get_grid(
             if cell is not None:
                 cell_data = PlanningCellRead.model_validate(cell).model_dump(mode="json")
             else:
-                cell_data = {
+                cell_data: dict[str, Any] = {
                     "id": None,
                     "row_id": str(row.id),
                     "column_id": str(column.id),
