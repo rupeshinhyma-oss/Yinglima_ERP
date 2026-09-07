@@ -1,7 +1,8 @@
 # Enterprise ERP System — Unified Architecture, Feature & Technical Manual
 
-> **System Version:** 1.0.0 (Production)  
-> **Last Updated:** September 2026  
+> **System Version:** 1.1.0 (Production)  
+> **Last Updated:** September 7, 2026  
+> **Repository:** `https://github.com/rupeshinhyma-oss/Yinglima_ERP.git`  
 > **Architectural Pattern:** Modular Async Monolith (FastAPI) + React 18 SPA (Vite) + Real-Time WebSocket Event Bus  
 > **Target Audience:** Systems Architects, Software Engineers, DevOps, and Autonomous AI Coding Assistants.  
 > **Scope:** Complete end-to-end technical reference containing all system features, data models, API endpoints, background workers, frontend architecture, and developer integration guidelines.
@@ -115,31 +116,33 @@
 ```
 ERP_Main_Claude/
 ├── AGENTS.md                  # Mandatory AI and Developer Living Documentation Policy
+├── MODULES_AND_FEATURES_TEST_MANUAL.md # Complete UI views, fields, actions & test checklists
 ├── doc/
 │   ├── README.md              # Central documentation index
+│   ├── PROJECT_STATUS_HANDOVER.md # Master onboarding, active consignments & server handover
 │   └── SYSTEM_DOCUMENTATION.md# Master Unified Architecture & Feature Manual (THIS FILE)
 ├── backend/
 │   ├── app/
 │   │   ├── api/v1/router.py   # Versioned API route registration
 │   │   ├── audit/             # Immutable audit log models, service, and routes
 │   │   ├── auth/              # JWT auth, Argon2id, session tracking, rate limiting
-│   │   ├── buyers/             # Buyer directory, contacts, addresses, credit limits
-│   │   ├── cache/              # Redis / in-memory cache manager, cleanup worker
-│   │   ├── common/             # BaseRepository, BaseService, Pagination, Storage, Importer, Email
-│   │   ├── core/                # Config, Responses, Exceptions, Exception Handlers, Logging
-│   │   ├── database/           # Async Engine, Session DI, Declarative Base Mixins
-│   │   ├── employees/          # Employee (workforce/person) records, optional User Account link
-│   │   ├── events/              # WebSocket connection manager and broadcast bus
-│   │   ├── inquiries/          # RFQ lifecycle, AI Quote Extractor, IMAP email poller
+│   │   ├── buyers/            # Buyer directory, contacts, addresses, credit limits
+│   │   ├── cache/             # Redis / in-memory cache manager, cleanup worker
+│   │   ├── common/            # BaseRepository, BaseService, Pagination, Storage, Importer, Email
+│   │   ├── core/              # Config, Responses, Exceptions, Exception Handlers, Logging
+│   │   ├── database/          # Async Engine, Session DI, Declarative Base Mixins
+│   │   ├── employees/         # Employee (workforce/person) records, optional User Account link
+│   │   ├── events/            # WebSocket connection manager and broadcast bus
+│   │   ├── inquiries/         # RFQs, AI Extractor, IMAP email poller, WeCom WeChat service
 │   │   ├── masters/           # Brands, Categories, Subcategories, Geography, Currencies
 │   │   ├── middleware/        # Correlation ID, Logging, Security, Rate Limiter
 │   │   ├── organizations/     # Enterprise profile settings
-│   │   ├── org_structure/     # Departments, Positions, Leadership, Reporting Structure (IAM upgrade)
+│   │   ├── org_structure/     # Leadership, Positions, Reporting Structure (IAM upgrade)
 │   │   ├── planning/          # Dynamic spreadsheet planning grid, container CBM calculator
 │   │   ├── rbac/              # Roles, Permissions, User Overrides, Effective Permissions
 │   │   ├── suppliers/         # Supplier directory, tokenized public quote portal
 │   │   ├── trash/             # Universal Recycle Bin recovery service
-│   │   ├── users/             # User accounts, HR profiles, reporting managers
+│   │   ├── users/             # User accounts, deactivation, force logout, reporting managers
 │   │   └── main.py            # Composition root, lifespan lifecycle, middleware wiring
 │   ├── alembic/               # Database schema version migrations
 │   ├── scripts/               # Migration and maintenance tools (sync_uploads_to_supabase.py)
@@ -458,6 +461,7 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
 | **Users** | `POST` | `/api/v1/users/{id}/roles` | Assign Role/Department (with assignment_type, is_primary, effective dates) | `user.action` |
 | **Users** | `POST` | `/api/v1/users/{id}/deactivate` | Deactivate a user, terminate all active sessions, and block login | `user.action` |
 | **Users** | `POST` | `/api/v1/users/{id}/activate` | Reactivate an inactive user, restoring login ability | `user.action` |
+| **Users** | `POST` | `/api/v1/users/{id}/force-logout` | Revoke active sessions, invalidate tokens & push real-time WebSocket disconnect | `user.action` |
 | **Users** | `DELETE`| `/api/v1/users/{id}` | Permanently disabled (returns 400 Bad Request to preserve audit integrity) | `user.action` |
 | **RBAC** | `GET` | `/api/v1/rbac/roles` | List all Roles / Departments | `roles_permissions.view` |
 | **RBAC** | `POST` | `/api/v1/rbac/roles` | Create new Role / Department (with optional `code` and `parent_department_id`) | `roles_permissions.create` |
@@ -515,6 +519,8 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
 | **Inquiries**| `POST` | `/api/v1/inquiries/{id}/items` | Add line item to inquiry | `inquiry.update` |
 | **Inquiries**| `POST` | `/api/v1/inquiries/{id}/items/bulk` | Bulk add items to inquiry | `inquiry.update` |
 | **Inquiries**| `POST` | `/api/v1/inquiries/{id}/bulk-rfqs` | Dispatch multi-item RFQ emails/WeChat to suppliers | `inquiry.action` |
+| **Inquiries**| `POST` | `/api/v1/inquiries/rfq/bulk-dispatch` | Multi-item isolated 1-on-1 email & WeChat RFQ dispatch | `inquiry.action` |
+| **Inquiries**| `POST` | `/api/v1/inquiries/messages/send-direct-email` | Direct inline email composer to supplier via SMTP | `inquiry.action` |
 | **Inquiries**| `GET`  | `/api/v1/inquiries/{id}/messages` | Fetch chronological two-way communication feed | `inquiry.read` |
 | **Inquiries**| `GET`  | `/api/v1/inquiries/wechat/callback` | Tencent WeCom handshake verification | Public (Signature Verified) |
 | **Inquiries**| `POST` | `/api/v1/inquiries/wechat/callback` | WeCom webhook handler with AI quotation ingestion | Public (AES Decrypted) |
