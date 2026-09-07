@@ -1,7 +1,7 @@
 # Yinglima ERP — Master Project Context & Handover Documentation
 
-**Last Updated:** September 4, 2026 (18:15 IST)  
-**Repository:** `rupeshinhyma-oss/ERP_Main_Claude` (`d:\OM work\ERP_Main_Claude-main`)  
+**Last Updated:** September 7, 2026 (17:05 IST)  
+**Repository:** `https://github.com/rupeshinhyma-oss/Yinglima_ERP.git` (`d:\OM work\ERP_Main_Claude-main`)  
 **Target Audience:** Antigravity AI Agent & Human Developers (Comprehensive onboarding & resume document)
 
 ---

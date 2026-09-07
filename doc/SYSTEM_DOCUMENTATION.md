@@ -1,7 +1,8 @@
 # Enterprise ERP System — Unified Architecture, Feature & Technical Manual
 
-> **System Version:** 1.0.0 (Production)  
+> **System Version:** 1.1.0 (Production)  
 > **Last Updated:** September 7, 2026 (Products Master server-side pagination & comprehensive search upgrade, Vite proxy timeout resolution, Neon Serverless Singapore ap-southeast-1 migration, OCC version column alignment migration f9a0b1c2d3e4, planning_sheets item_description support, and 100% data parity verification)  
+> **Repository:** `https://github.com/rupeshinhyma-oss/Yinglima_ERP.git`  
 > **Architectural Pattern:** Modular Async Monolith (FastAPI) + React 18 SPA (Vite) + Real-Time WebSocket Event Bus  
 > **Target Audience:** Systems Architects, Software Engineers, DevOps, and Autonomous AI Coding Assistants.  
 > **Scope:** Complete end-to-end technical reference containing all system features, data models, API endpoints, background workers, frontend architecture, and developer integration guidelines.
@@ -115,31 +116,33 @@
 ```
 ERP_Main_Claude/
 ├── AGENTS.md                  # Mandatory AI and Developer Living Documentation Policy
+├── MODULES_AND_FEATURES_TEST_MANUAL.md # Complete UI views, fields, actions & test checklists
 ├── doc/
 │   ├── README.md              # Central documentation index
+│   ├── PROJECT_STATUS_HANDOVER.md # Master onboarding, active consignments & server handover
 │   └── SYSTEM_DOCUMENTATION.md# Master Unified Architecture & Feature Manual (THIS FILE)
 ├── backend/
 │   ├── app/
 │   │   ├── api/v1/router.py   # Versioned API route registration
 │   │   ├── audit/             # Immutable audit log models, service, and routes
 │   │   ├── auth/              # JWT auth, Argon2id, session tracking, rate limiting
-│   │   ├── buyers/             # Buyer directory, contacts, addresses, credit limits
-│   │   ├── cache/              # Redis / in-memory cache manager, cleanup worker
-│   │   ├── common/             # BaseRepository, BaseService, Pagination, Storage, Importer, Email
-│   │   ├── core/                # Config, Responses, Exceptions, Exception Handlers, Logging
-│   │   ├── database/           # Async Engine, Session DI, Declarative Base Mixins
-│   │   ├── employees/          # Employee (workforce/person) records, optional User Account link
-│   │   ├── events/              # WebSocket connection manager and broadcast bus
-│   │   ├── inquiries/          # RFQ lifecycle, AI Quote Extractor, IMAP email poller
+│   │   ├── buyers/            # Buyer directory, contacts, addresses, credit limits
+│   │   ├── cache/             # Redis / in-memory cache manager, cleanup worker
+│   │   ├── common/            # BaseRepository, BaseService, Pagination, Storage, Importer, Email
+│   │   ├── core/              # Config, Responses, Exceptions, Exception Handlers, Logging
+│   │   ├── database/          # Async Engine, Session DI, Declarative Base Mixins
+│   │   ├── employees/         # Employee (workforce/person) records, optional User Account link
+│   │   ├── events/            # WebSocket connection manager and broadcast bus
+│   │   ├── inquiries/         # RFQs, AI Extractor, IMAP email poller, WeCom WeChat service
 │   │   ├── masters/           # Brands, Categories, Subcategories, Geography, Currencies
 │   │   ├── middleware/        # Correlation ID, Logging, Security, Rate Limiter
 │   │   ├── organizations/     # Enterprise profile settings
-│   │   ├── org_structure/     # Departments, Positions, Leadership, Reporting Structure (IAM upgrade)
+│   │   ├── org_structure/     # Leadership, Positions, Reporting Structure (IAM upgrade)
 │   │   ├── planning/          # Dynamic spreadsheet planning grid, container CBM calculator
 │   │   ├── rbac/              # Roles, Permissions, User Overrides, Effective Permissions
 │   │   ├── suppliers/         # Supplier directory, tokenized public quote portal
 │   │   ├── trash/             # Universal Recycle Bin recovery service
-│   │   ├── users/             # User accounts, HR profiles, reporting managers
+│   │   ├── users/             # User accounts, deactivation, force logout, reporting managers
 │   │   └── main.py            # Composition root, lifespan lifecycle, middleware wiring
 │   ├── alembic/               # Database schema version migrations
 │   ├── scripts/               # Migration, seeding, and maintenance tools (setup_neon_databases.py, shift_supabase_to_neon.py, sync_uploads_to_supabase.py)
@@ -271,6 +274,13 @@ Passwords are hashed using Argon2id with strict parameters:
 ### 6.3. Active Session Governance
 Every authentication creates a record in the `sessions` table capturing IP address, location, browser user-agent, and device category. Users and administrators can inspect active sessions and revoke compromised devices remotely.
 
+### 6.4. Soft-Deleted Account Authentication Immunity
+In accordance with system security standards, soft-deleted user accounts (`deleted_at IS NOT NULL`) are strictly prevented from authenticating:
+- **Login Defense**: `UserRepository.get_by_identifier` automatically excludes soft-deleted accounts via `_base_select()`. Attempts to log in with credentials of a soft-deleted user fail immediately with `401 Unauthorized: Invalid username/email/phone number or password.`, mirroring the exact security response of hard-deleted accounts without leaking account existence.
+- **Active Token Rejection**: Any in-flight JWT access token presented for a soft-deleted user is rejected during dependency verification (`verify_access_token`) with `401 Unauthorized: User account no longer exists.`.
+- **Property Guard**: `User.can_login` evaluates strictly to `False` if `deleted_at` is set.
+- **Restoration**: If an administrator restores the user from the Recycle Bin (clearing `deleted_at`), normal authentication capabilities are restored.
+
 ---
 
 ## 7. RBAC Engine, Departments & Effective Permissions
@@ -320,6 +330,10 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
   - **Department & Manager Auto-Wiring:** When selecting an initial department in the Create User modal, the system calls `/users/department-manager/{role_id}` to automatically detect and pre-fill the department's active manager, with manual override capability.
   - **Positions & Reporting:** Profile Drawer displays held positions (`GET /positions/holders-for-user/{id}`), reporting managers (`GET /reporting/managers/{id}`), and direct reports (`GET /reporting/direct-reports/{id}`).
   - **Multi-Role Assignment:** Assign any number of roles/departments with `assignment_type` (PRIMARY, SECONDARY, TEMPORARY, PROJECT, ACTING), `is_primary`, and effective date ranges.
+  - **Account Deactivation Policy & Permanent Retirement of User Deletion:** User deletion is permanently retired and disabled system-wide (`DELETE /users/{id}` returns 400 Bad Request) to preserve audit integrity and historical transaction data. Deactivating a user (`POST /users/{id}/deactivate`) marks their account `INACTIVE` (`is_active=False`), immediately terminates all active sessions, and prevents login or token refresh. Deactivated accounts can be reactivated by administrators (`POST /users/{id}/activate`).
+  - **Collective Multi-Select & Bulk Deactivation:** The Users directory supports selecting multiple accounts via row/header checkboxes to execute bulk deactivation with built-in safety guardrails (protecting the administrator's own account, super-admin accounts, and already inactive accounts).
+  - **Unified Edit User Profile & HR Details Drawer (Integrated Department Management):** The previous separate "Manage Departments" row action is now consolidated directly into the "Edit Profile" drawer. Administrators can manage basic identity, contact info, HR attributes, reporting manager, positions, and add/remove **Department & Role Assignments** (with assignment types and primary flags) in one unified interface without switching modals.
+  - **Immediate Real-Time Force Logout:** "Force Logout" (`POST /users/{id}/force-logout`) provides guaranteed real-time session termination. It revokes device sessions in the database, caches a revocation timestamp (`auth_force_logout:{user_id}`) to instantly reject any in-flight access tokens on subsequent API calls, and pushes a real-time WebSocket disconnect event (`FORCE_LOGOUT`, code `4001`) that immediately clears client storage and redirects the active user to the login screen.
 
 ### 8.3. Departments & Permissions (RBAC & Org Structure)
 - **Endpoints:** `GET /rbac/roles`, `POST /rbac/roles`, `PATCH /rbac/roles/{id}`, `DELETE /rbac/roles/{id}`, `POST /rbac/roles/{id}/delete-with-reassignment`, `PUT /rbac/users/{id}/permissions/bulk`, `GET /rbac/roles/{id}/hierarchy`, `POST /rbac/roles/{id}/parents`, `DELETE /rbac/roles/{id}/parents/{parent_id}`, `POST /rbac/roles/{id}/children`, `DELETE /rbac/roles/{id}/children/{child_id}`.
@@ -453,6 +467,7 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
 - **Routing:** React Router v6 with `ProtectedRoute` guards and deep-link redirect preservation.
 - **Error Boundaries:** Multi-layer error boundary protection with an application-level root boundary in `main.tsx` and a route-keyed boundary (`ErrorBoundary key={location.pathname}`) in `App.tsx` ensuring crashed page states do not leak across navigation transitions.
 - **Component Design System:** Predefined accessible UI tokens in `frontend/src/components/ui.tsx` and `fields.tsx` (including interactive `TextField` with automatic password visibility eye toggle `showPasswordToggle`).
+- **Universal Inward Dropdown Chevron Styling:** To prevent browser-native chevron overlap and provide clean visual balance, native selects (`select:not([multiple])`) across all modules utilize custom SVG arrows positioned inward (`right: 14px; padding-right: 34px;`), matched by `SelectField`'s animated SVG chevron with dynamic 180° flip transition upon focus/open.
 - **Hooks Architecture:** Custom hooks for asynchronous state management: `useAuth`, `usePendingGuard`, `useToast`, `usePagination`.
 
 ---
@@ -475,7 +490,10 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
 | **Users** | `PATCH` | `/api/v1/users/{id}` | Update user profile / reporting manager | `user.update` |
 | **Users** | `POST` | `/api/v1/users/{id}/reset-password` | Generate temporary login password | `user.reset_password` |
 | **Users** | `POST` | `/api/v1/users/{id}/roles` | Assign Role/Department (with assignment_type, is_primary, effective dates) | `user.action` |
-| **Users** | `DELETE`| `/api/v1/users/{id}/roles/{role_id}` | Remove one Role from a user | `user.action` |
+| **Users** | `POST` | `/api/v1/users/{id}/deactivate` | Deactivate a user, terminate all active sessions, and block login | `user.action` |
+| **Users** | `POST` | `/api/v1/users/{id}/activate` | Reactivate an inactive user, restoring login ability | `user.action` |
+| **Users** | `POST` | `/api/v1/users/{id}/force-logout` | Revoke active sessions, invalidate tokens & push real-time WebSocket disconnect | `user.action` |
+| **Users** | `DELETE`| `/api/v1/users/{id}` | Permanently disabled (returns 400 Bad Request to preserve audit integrity) | `user.action` |
 | **RBAC** | `GET` | `/api/v1/rbac/roles` | List all Roles / Departments | `roles_permissions.view` |
 | **RBAC** | `POST` | `/api/v1/rbac/roles` | Create new Role / Department (with optional `code` and `parent_department_id`) | `roles_permissions.create` |
 | **RBAC** | `PATCH` | `/api/v1/rbac/roles/{id}` | Update Role name/description/code/parent (with cycle detection) | `roles_permissions.action` |
@@ -532,6 +550,8 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
 | **Inquiries**| `POST` | `/api/v1/inquiries/{id}/items` | Add line item to inquiry | `inquiry.update` |
 | **Inquiries**| `POST` | `/api/v1/inquiries/{id}/items/bulk` | Bulk add items to inquiry | `inquiry.update` |
 | **Inquiries**| `POST` | `/api/v1/inquiries/{id}/bulk-rfqs` | Dispatch multi-item RFQ emails/WeChat to suppliers | `inquiry.action` |
+| **Inquiries**| `POST` | `/api/v1/inquiries/rfq/bulk-dispatch` | Multi-item isolated 1-on-1 email & WeChat RFQ dispatch | `inquiry.action` |
+| **Inquiries**| `POST` | `/api/v1/inquiries/messages/send-direct-email` | Direct inline email composer to supplier via SMTP | `inquiry.action` |
 | **Inquiries**| `GET`  | `/api/v1/inquiries/{id}/messages` | Fetch chronological two-way communication feed | `inquiry.read` |
 | **Inquiries**| `GET`  | `/api/v1/inquiries/wechat/callback` | Tencent WeCom handshake verification | Public (Signature Verified) |
 | **Inquiries**| `POST` | `/api/v1/inquiries/wechat/callback` | WeCom webhook handler with AI quotation ingestion | Public (AES Decrypted) |
@@ -675,4 +695,4 @@ VITE_WS_BASE_URL=ws://localhost:8000/api/v1/events/ws
 - **Native React State Dispatch**: Seamlessly triggers React's synthetic `onChange` and `input` events so form state updates immediately without manual backspacing. Excludes password and file upload inputs.
 
 ---
-*Maintained and verified for Inhyma Solutions Enterprise ERP. Last updated: September 4, 2026 (Isolated 1-on-1 RFQ supplier email dispatch, Reply-To header enforcement, strict first-conversation AI extraction policy).*
+*Maintained and verified for Inhyma Solutions Enterprise ERP. Last updated: September 7, 2026 (Merged: Permanent User Deletion Retirement, Account Deactivation Policy & Bulk Deactivation, Unified Edit Profile with Integrated Department Management, Real-Time Force Logout, Isolated 1-on-1 RFQ Supplier Email Dispatch, WeChat/WeCom Automated AI Quotation Extraction, and 100% Supabase-to-Neon Data Parity Migration).*
