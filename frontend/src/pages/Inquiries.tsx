@@ -2096,12 +2096,28 @@ function ItemsView({
                               })()}
                             </div>
 
-                            {!isOutbound && (
-                              <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11.5px", color: "#059669", fontWeight: 600 }}>
-                                <span>✨</span>
-                                <span>Auto-Extracted with Conversational AI &amp; Recorded in Quotation Matrix</span>
-                              </div>
-                            )}
+                            {!isOutbound && (() => {
+                              const linkedQuote = quotations.find((q) => q.supplier_id === msg.supplier_id);
+                              if (linkedQuote) {
+                                const firstInboundFromSupplier = wechatList.find((m: any) => m.direction === "inbound" && m.supplier_id === msg.supplier_id);
+                                const isFirstQuoteMsg = firstInboundFromSupplier && firstInboundFromSupplier.id === msg.id;
+                                if (isFirstQuoteMsg) {
+                                  const currSym = linkedQuote.currency === "USD" ? "$" : linkedQuote.currency === "INR" ? "₹" : "¥";
+                                  return (
+                                    <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11.5px", color: "#059669", fontWeight: 600 }}>
+                                      <span>✨</span>
+                                      <span>Auto-Extracted with Conversational AI &amp; Recorded in Quotation Matrix ({linkedQuote.quote_number} • {currSym}{linkedQuote.unit_price})</span>
+                                    </div>
+                                  );
+                                }
+                              }
+                              return (
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11.5px", color: "#64748b", fontWeight: 500 }}>
+                                  <span>💬</span>
+                                  <span>Supplier WeChat Discussion</span>
+                                </div>
+                              );
+                            })()}
                           </div>
                         );
                       })}
@@ -2127,20 +2143,53 @@ function ItemsView({
               };
               const emailList = inquiryMessages.filter((m: any) => (m.channel === "email" || !m.channel) && isRelevantMessage(m));
 
-              // Extract unique suppliers present in this product's emails
+              // Step 1: Pre-build email-to-supplier mapping from all messages
+              const emailToSupplierMap = new Map<string, { id: string; name: string }>();
+              for (const m of inquiryMessages) {
+                const sName = m.supplier_name || (!m.direction?.includes("outbound") && m.sender_name && m.sender_name !== "Yinglima Procurement" && !m.sender_name.includes("@") ? m.sender_name : null);
+                if (sName && sName !== "Supplier" && sName !== "Yinglima Procurement") {
+                  const rawContact = `${m.recipient_contact || ""} ${m.sender_contact || ""}`;
+                  const matches = rawContact.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) || [];
+                  for (const em of matches) {
+                    emailToSupplierMap.set(em.toLowerCase().trim(), { id: m.supplier_id || sName, name: sName });
+                  }
+                  if (m.supplier_id) {
+                    emailToSupplierMap.set(m.supplier_id, { id: m.supplier_id, name: sName });
+                  }
+                }
+              }
+
+              // Step 2: Build clean deduplicated uniqueSuppliersInEmails list
               const uniqueSuppliersInEmails: { id: string; name: string; email: string }[] = [];
               const seenSuppMap = new Set<string>();
+
               for (const m of emailList) {
                 const isOutbound = m.direction === "outbound";
                 const rawContact = isOutbound ? m.recipient_contact : (m.sender_contact || "");
                 const emailMatch = (rawContact || "").match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-                const cleanEmail = emailMatch ? emailMatch[0] : (rawContact && rawContact.includes("@") ? rawContact.trim() : "");
-                const suppName = m.supplier_name || (!isOutbound ? (m.sender_name || cleanEmail) : cleanEmail) || "Supplier";
-                const suppKey = cleanEmail || m.supplier_id || suppName;
-                if (suppKey && !seenSuppMap.has(suppKey) && suppName !== "Yinglima Procurement") {
-                  seenSuppMap.add(suppKey);
+                const cleanEmail = emailMatch ? emailMatch[0].toLowerCase().trim() : (rawContact && rawContact.includes("@") ? rawContact.trim().toLowerCase() : "");
+
+                let suppName = m.supplier_name;
+                let suppId = m.supplier_id;
+
+                if (!suppName && cleanEmail && emailToSupplierMap.has(cleanEmail)) {
+                  const mapped = emailToSupplierMap.get(cleanEmail)!;
+                  suppName = mapped.name;
+                  suppId = suppId || mapped.id;
+                }
+
+                if (!suppName && !isOutbound && m.sender_name && m.sender_name !== "Yinglima Procurement" && !m.sender_name.includes("@")) {
+                  suppName = m.sender_name;
+                }
+
+                // If still unknown, fall back to email
+                suppName = suppName || cleanEmail || "Supplier";
+                const uniqueKey = suppId || suppName;
+
+                if (uniqueKey && !seenSuppMap.has(uniqueKey) && suppName !== "Yinglima Procurement") {
+                  seenSuppMap.add(uniqueKey);
                   uniqueSuppliersInEmails.push({
-                    id: String(suppKey),
+                    id: String(uniqueKey),
                     name: suppName,
                     email: cleanEmail,
                   });
@@ -2150,13 +2199,21 @@ function ItemsView({
               const displayedEmailList = emailSupplierFilter === "all"
                 ? emailList
                 : emailList.filter((m: any) => {
-                    const suppKey = m.supplier_id || m.supplier_name || m.sender_name || m.sender_contact;
-                    const suppName = m.supplier_name || m.sender_name || m.sender_contact;
-                    return (
-                      suppKey === emailSupplierFilter ||
-                      suppName === emailSupplierFilter ||
-                      (m.direction === "outbound" && (m.message_text || "").toLowerCase().includes(emailSupplierFilter.toLowerCase()))
-                    );
+                    const rawContact = `${m.recipient_contact || ""} ${m.sender_contact || ""}`.toLowerCase();
+                    const targetSupplier = uniqueSuppliersInEmails.find((s) => s.id === emailSupplierFilter);
+
+                    if (m.supplier_id && m.supplier_id === emailSupplierFilter) return true;
+                    if (m.supplier_name && m.supplier_name === emailSupplierFilter) return true;
+                    if (m.sender_name && m.sender_name === emailSupplierFilter) return true;
+
+                    if (targetSupplier) {
+                      if (targetSupplier.id === m.supplier_id) return true;
+                      if (targetSupplier.name && (m.supplier_name === targetSupplier.name || m.sender_name === targetSupplier.name)) return true;
+                      if (targetSupplier.email && rawContact.includes(targetSupplier.email.toLowerCase())) return true;
+                      if (targetSupplier.name && (m.message_text || "").toLowerCase().includes(targetSupplier.name.toLowerCase())) return true;
+                    }
+
+                    return false;
                   });
 
               return (
@@ -2350,12 +2407,28 @@ function ItemsView({
                               })()}
                             </div>
 
-                            {!isOutbound && (
-                              <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11.5px", color: "#2563eb", fontWeight: 600 }}>
-                                <span>✨</span>
-                                <span>Auto-Parsed with AI &amp; Recorded in Quotation Matrix</span>
-                              </div>
-                            )}
+                            {!isOutbound && (() => {
+                              const linkedQuote = quotations.find((q) => q.supplier_id === msg.supplier_id);
+                              if (linkedQuote) {
+                                const firstInboundFromSupplier = displayedEmailList.find((m: any) => m.direction === "inbound" && m.supplier_id === msg.supplier_id);
+                                const isFirstQuoteMsg = firstInboundFromSupplier && firstInboundFromSupplier.id === msg.id;
+                                if (isFirstQuoteMsg) {
+                                  const currSym = linkedQuote.currency === "USD" ? "$" : linkedQuote.currency === "INR" ? "₹" : "¥";
+                                  return (
+                                    <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11.5px", color: "#2563eb", fontWeight: 600 }}>
+                                      <span>✨</span>
+                                      <span>Auto-Parsed with AI &amp; Recorded in Quotation Matrix ({linkedQuote.quote_number} • {currSym}{linkedQuote.unit_price})</span>
+                                    </div>
+                                  );
+                                }
+                              }
+                              return (
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11.5px", color: "#64748b", fontWeight: 500 }}>
+                                  <span>💬</span>
+                                  <span>Inbound Discussion / Negotiation Thread</span>
+                                </div>
+                              );
+                            })()}
                           </div>
                         );
                       })}
@@ -5752,6 +5825,7 @@ function AddItemModal({
   const [status, setStatus] = useState<"proposed" | "approved">("proposed");
   const [submitting, setSubmitting] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
+  const [selectedUom, setSelectedUom] = useState<string>("");
 
   // Sync buyer_id if defaultBuyerId changes
   useEffect(() => {
@@ -5872,6 +5946,8 @@ function AddItemModal({
       try {
         const { data: prod } = await apiGet<any>(`/masters/products/${prodId}`);
         if (prod) {
+          const uomStr = prod.uom?.name || prod.uom?.code || prod.uom_name || "";
+          setSelectedUom(uomStr);
           setForm((f) => ({
             ...f,
             product_id: prodId,
@@ -5882,6 +5958,8 @@ function AddItemModal({
       } catch {
         /* ignore */
       }
+    } else {
+      setSelectedUom("");
     }
   };
 
@@ -5932,7 +6010,7 @@ function AddItemModal({
         <div style={{ marginTop: 12 }}>
           <TextField
             id="quantity"
-            label="Quantity *"
+            label={selectedUom ? `Quantity * (${selectedUom})` : "Quantity *"}
             required
             type="number"
             value={form.quantity}
@@ -6156,6 +6234,7 @@ function QuickInquiryDrawer({
   ]);
 
   const [saving, setSaving] = useState(false);
+  const [drawerError, setDrawerError] = useState<string | null>(null);
 
   const stampedDateStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
   const stampedUserName = String(profile?.full_name || profile?.username || "Rahul Patel");
@@ -6454,13 +6533,14 @@ function QuickInquiryDrawer({
   }, []);
 
   const handleSubmit = async (submitStatus: "proposed" | "approved") => {
+    setDrawerError(null);
     if (!selectedBuyerId) {
-      alert("Please select a Buyer Company.");
+      setDrawerError("Please select a Buyer Company.");
       return;
     }
     const validItems = items.filter((i) => i.product_id && parseFloat(i.quantity) > 0);
     if (validItems.length === 0) {
-      alert("Please add at least one product with valid quantity.");
+      setDrawerError("Please add at least one product with valid quantity.");
       return;
     }
 
@@ -6471,47 +6551,126 @@ function QuickInquiryDrawer({
       if (isCreatingNewCode || !finalCodeId || finalCodeId === "__NEW__") {
         const codeToCreate = (customNewCode.trim() || recommendedCode || "").toUpperCase();
         if (!codeToCreate) {
-          alert("Please enter a Consignment Code (e.g. INM1, FB1, T1).");
+          setDrawerError("Please enter a Consignment Code (e.g. INM1, FB1, T1).");
           setSaving(false);
           return;
         }
-        const createRes = await apiPost<ConsignmentCode>("/inquiries/consignment-codes", {
-          code: codeToCreate,
-          label: `${selectedBuyer?.name || ""} Consignment ${codeToCreate}`,
-          buyer_id: selectedBuyerId,
-          branch_id: null,
-        });
-        finalCodeId = createRes.data.id;
-      } else {
-        try {
-          const { data: consignments } = await apiGet<any[]>(`/inquiries/companies/${selectedBuyerId}`);
-          const matchingInquiry = consignments.find((c) => c.consignment_code_id === finalCodeId);
-          if (matchingInquiry) {
-            const { data: existingItems } = await apiGet<any[]>(`/inquiries/${matchingInquiry.id}/items`);
-            if (Array.isArray(existingItems) && existingItems.length > 0) {
-              await Promise.all(existingItems.map((i: any) => apiDelete(`/inquiries/${matchingInquiry.id}/items/${i.id}`)));
+
+        // Check if this consignment code already exists locally or globally
+        const existingCodeObj =
+          (consignmentCodes || []).find((c) => (c.code || "").toUpperCase() === codeToCreate) ||
+          (allConsignmentCodes || []).find((c) => (c.code || "").toUpperCase() === codeToCreate);
+
+        if (existingCodeObj) {
+          if (existingCodeObj.buyer_id && existingCodeObj.buyer_id !== selectedBuyerId) {
+            setDrawerError(`Consignment code "${codeToCreate}" is already owned by another buyer company. Please choose a different code.`);
+            setSaving(false);
+            return;
+          }
+          finalCodeId = existingCodeObj.id;
+        } else {
+          try {
+            const createRes = await apiPost<ConsignmentCode>("/inquiries/consignment-codes", {
+              code: codeToCreate,
+              label: `${selectedBuyer?.name || ""} Consignment ${codeToCreate}`,
+              buyer_id: selectedBuyerId,
+              branch_id: null,
+            });
+            finalCodeId = createRes.data.id;
+          } catch (createErr: any) {
+            // If backend says already exists (409 Conflict), re-fetch and link to existing code
+            const { data: refreshedCodes } = await apiGet<ConsignmentCode[]>("/inquiries/consignment-codes");
+            const found = (refreshedCodes || []).find((c) => (c.code || "").toUpperCase() === codeToCreate);
+            if (found) {
+              if (found.buyer_id && found.buyer_id !== selectedBuyerId) {
+                setDrawerError(`Consignment code "${codeToCreate}" belongs to another buyer company.`);
+                setSaving(false);
+                return;
+              }
+              finalCodeId = found.id;
+            } else {
+              throw createErr;
             }
           }
-        } catch {
         }
       }
 
-      const bulkPayload = {
-        buyer_id: selectedBuyerId,
-        consignment_code_id: finalCodeId,
-        items: validItems.map((item) => ({
-          product_id: item.product_id,
-          quantity: parseFloat(item.quantity),
-          brand_preference: item.brand_preference.trim() || null,
-          product_specs_remarks: item.product_specs_remarks.trim() || null,
-          status: submitStatus,
-        })),
-      };
+      // Check if an existing inquiry consignment exists for this buyer & code
+      let matchingInquiry: any = null;
+      if (finalCodeId && finalCodeId !== "__NEW__") {
+        try {
+          const { data: consignments } = await apiGet<any[]>(`/inquiries/companies/${selectedBuyerId}`);
+          matchingInquiry = (consignments || []).find((c) => c.consignment_code_id === finalCodeId);
+        } catch {
+          matchingInquiry = null;
+        }
+      }
 
-      await apiPost("/inquiries/items/bulk", bulkPayload);
+      if (matchingInquiry) {
+        // Safe, non-destructive update: Update existing items, append new items, and preserve quotes/chats
+        const existingRows = validItems.filter((i) => !i.id.startsWith("row_"));
+        const newRows = validItems.filter((i) => i.id.startsWith("row_"));
+
+        // 1. Update existing items in place
+        for (const er of existingRows) {
+          try {
+            await apiPatch(`/inquiries/${matchingInquiry.id}/items/${er.id}`, {
+              quantity: parseFloat(er.quantity),
+              brand_preference: er.brand_preference.trim() || null,
+              product_specs_remarks: er.product_specs_remarks.trim() || null,
+            });
+          } catch (patchErr) {
+            console.error("Failed to patch item", er.id, patchErr);
+          }
+        }
+
+        // 2. Append newly added items to this consignment
+        if (newRows.length > 0) {
+          const bulkPayload = {
+            buyer_id: selectedBuyerId,
+            consignment_code_id: finalCodeId,
+            items: newRows.map((item) => ({
+              product_id: item.product_id,
+              quantity: parseFloat(item.quantity),
+              brand_preference: item.brand_preference.trim() || null,
+              product_specs_remarks: item.product_specs_remarks.trim() || null,
+              status: submitStatus,
+            })),
+          };
+          await apiPost("/inquiries/items/bulk", bulkPayload);
+        }
+
+        // 3. Remove only items that were deleted by the user in this session
+        try {
+          const { data: currentItemsInDb } = await apiGet<any[]>(`/inquiries/${matchingInquiry.id}/items`);
+          const currentValidIds = new Set(existingRows.map((r) => r.id));
+          const removedItems = (currentItemsInDb || []).filter((ci: any) => !currentValidIds.has(ci.id));
+          if (removedItems.length > 0) {
+            await Promise.all(removedItems.map((ri: any) => apiDelete(`/inquiries/${matchingInquiry.id}/items/${ri.id}`)));
+          }
+        } catch {
+          /* ignore delete errors */
+        }
+      } else {
+        // Brand new consignment: Create all items in bulk
+        const bulkPayload = {
+          buyer_id: selectedBuyerId,
+          consignment_code_id: finalCodeId,
+          items: validItems.map((item) => ({
+            product_id: item.product_id,
+            quantity: parseFloat(item.quantity),
+            brand_preference: item.brand_preference.trim() || null,
+            product_specs_remarks: item.product_specs_remarks.trim() || null,
+            status: submitStatus,
+          })),
+        };
+        await apiPost("/inquiries/items/bulk", bulkPayload);
+      }
 
       onSaved();
-    } catch (err) {
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || "Failed to save inquiry. Please check the inputs.";
+      setDrawerError(msg);
       onError(err);
     } finally {
       setSaving(false);
@@ -6556,6 +6715,32 @@ function QuickInquiryDrawer({
           </div>
 
           <div style={{ flex: 1, overflowY: "auto", padding: "24px", display: "flex", flexDirection: "column", gap: "20px" }}>
+            {drawerError && (
+              <div
+                style={{
+                  background: "#fef2f2",
+                  border: "1px solid #fecaca",
+                  color: "#dc2626",
+                  padding: "11px 14px",
+                  borderRadius: "8px",
+                  fontSize: "13px",
+                  fontWeight: 500,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                }}
+              >
+                <span style={{ fontSize: "16px" }}>⚠️</span>
+                <span style={{ flex: 1 }}>{drawerError}</span>
+                <button
+                  type="button"
+                  onClick={() => setDrawerError(null)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: "16px" }}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
             <div style={{ background: "#f1f5f9", padding: "16px", borderRadius: "10px", border: "1px solid #cbd5e1" }}>
               <div style={{ marginBottom: "14px" }}>
                 <label style={{ display: "block", fontSize: "12.5px", fontWeight: 700, color: "#334155", marginBottom: "6px" }}>

@@ -195,8 +195,6 @@ class EmailInboundWorker:
         msg_id = (msg.get("Message-ID") or "").strip()
         if msg_id and msg_id in self._seen_message_ids:
             return
-        if msg_id:
-            self._save_seen_id(msg_id)
 
         from_raw = clean_decode_header(msg.get("From", ""))
         sender_email = extract_email_address(from_raw)
@@ -337,21 +335,13 @@ class EmailInboundWorker:
                             supplier = s
                             break
             else:
-                # For inbound emails, match sender
-                all_suppliers_res = await session.execute(select(Supplier).limit(100))
-                for s in all_suppliers_res.scalars().all():
-                    s_name = (s.company_name or "").strip()
-                    if s_name and len(s_name) > 3 and s_name.lower() in (subject + " " + full_body_text).lower():
-                        supplier = s
-                        break
-
-                if not supplier:
-                    s_email_res = await session.execute(
-                        select(SupplierEmail).where(SupplierEmail.email.ilike(sender_email))
-                    )
-                    s_email = s_email_res.scalars().first()
-                    if s_email:
-                        supplier = await session.get(Supplier, s_email.supplier_id)
+                # For inbound emails, prioritize exact sender email address matching first!
+                s_email_res = await session.execute(
+                    select(SupplierEmail).where(SupplierEmail.email.ilike(sender_email))
+                )
+                s_email = s_email_res.scalars().first()
+                if s_email:
+                    supplier = await session.get(Supplier, s_email.supplier_id)
 
                 if not supplier:
                     s_contact_res = await session.execute(
@@ -360,6 +350,16 @@ class EmailInboundWorker:
                     s_contact = s_contact_res.scalars().first()
                     if s_contact:
                         supplier = await session.get(Supplier, s_contact.supplier_id)
+
+                # Fallback: only if email not found in supplier database, check company name in subject/body
+                if not supplier:
+                    all_suppliers_res = await session.execute(select(Supplier).limit(100))
+                    for s in all_suppliers_res.scalars().all():
+                        s_name = (s.company_name or "").strip()
+                        # Strictly skip matching own procurement company name ("Yinglima") in email signatures
+                        if s_name and len(s_name) > 3 and "yinglima" not in s_name.lower() and s_name.lower() in (subject + " " + full_body_text).lower():
+                            supplier = s
+                            break
 
             # 3. Match Consignment / Inquiry Header
             matched_inquiry_id: uuid.UUID | None = None
@@ -378,24 +378,51 @@ class EmailInboundWorker:
                 except Exception:
                     pass
 
-            # B) Match Consignment Code from Subject / Body (e.g. [FB2] or #FB2)
+            # B) Match Consignment Code from Subject / Body (e.g. [FB2], [SEA 1], #FB2, #SEA 1)
             if not matched_inquiry_id:
-                code_match = re.search(r"\[([a-zA-Z0-9_\-]+)\]", subject) or re.search(r"#([a-zA-Z0-9_\-]+)", subject)
-                if code_match:
-                    found_code = code_match.group(1).strip()
-                    cc_res = await session.execute(
-                        select(ConsignmentCode).where(ConsignmentCode.code.ilike(found_code))
-                    )
-                    cc_obj = cc_res.scalars().first()
-                    if cc_obj:
+                # 1. Match against all known consignment codes (handling spaces like [SEA 1])
+                all_codes_res = await session.execute(
+                    select(ConsignmentCode).where(ConsignmentCode.deleted_at.is_(None))
+                )
+                all_codes = all_codes_res.scalars().all()
+                # Sort codes by length descending so longer codes match first
+                all_codes.sort(key=lambda c: len(c.code or ""), reverse=True)
+                for cc in all_codes:
+                    if not cc.code:
+                        continue
+                    cc_lower = cc.code.lower()
+                    subj_lower = subject.lower()
+                    body_lower = full_body_text.lower()
+                    if (
+                        f"[{cc_lower}]" in subj_lower
+                        or f"[#{cc_lower}]" in subj_lower
+                        or f"#{cc_lower}" in subj_lower
+                        or f"[{cc_lower}]" in body_lower
+                        or f"[#{cc_lower}]" in body_lower
+                    ):
                         inq_res = await session.execute(
-                            select(Inquiry).where(Inquiry.consignment_code_id == cc_obj.id)
+                            select(Inquiry).where(Inquiry.consignment_code_id == cc.id)
                         )
                         inq_obj = inq_res.scalars().first()
                         if inq_obj:
                             matched_inquiry_id = inq_obj.id
+                            break
 
-            # C) Active RFQ match for this supplier
+            # C) Match by Product Code in Subject/Body (e.g. #FNB-02391, #DAR-01855)
+            if not matched_inquiry_id:
+                all_items_res = await session.execute(
+                    select(InquiryItem, Product)
+                    .join(Product, InquiryItem.product_id == Product.id)
+                    .where(InquiryItem.deleted_at.is_(None))
+                    .order_by(InquiryItem.created_at.desc())
+                    .limit(50)
+                )
+                for itm, prod in all_items_res.all():
+                    if prod.product_code and prod.product_code.lower() in (subject + " " + full_body_text).lower():
+                        matched_inquiry_id = itm.inquiry_id
+                        break
+
+            # D) Active RFQ match for this supplier
             if not matched_inquiry_id and supplier:
                 rfq_res = await session.execute(
                     select(RFQ, InquiryItem)
@@ -409,18 +436,16 @@ class EmailInboundWorker:
                         target_rfq = r
                         break
 
-            # D) Fallback: Match by product code or name in recent inquiries
+            # E) Fallback: Match by product name in recent inquiries
             if not matched_inquiry_id:
                 all_items_res = await session.execute(
                     select(InquiryItem, Product)
                     .join(Product, InquiryItem.product_id == Product.id)
+                    .where(InquiryItem.deleted_at.is_(None))
                     .order_by(InquiryItem.created_at.desc())
                     .limit(30)
                 )
                 for itm, prod in all_items_res.all():
-                    if prod.product_code and prod.product_code.lower() in (subject + " " + full_body_text).lower():
-                        matched_inquiry_id = itm.inquiry_id
-                        break
                     if prod.product_name and len(prod.product_name) > 4 and prod.product_name.lower() in (subject + " " + full_body_text).lower():
                         matched_inquiry_id = itm.inquiry_id
                         break
@@ -455,57 +480,103 @@ class EmailInboundWorker:
 
             first_item, first_prod = consignment_items[0]
 
-            # 4. Resolve Target Product Item with Thread-Aware Inheritance
+            # 4. Resolve Target Product Item with Body-First Matching & Quoted-Status Awareness
             target_matched_item = None
+            body_lower = full_body_text.lower()
+            subj_lower = subject.lower()
 
-            # A) Check if email body/subject explicitly mentions a product code/name in this consignment
+            # Query which items in this consignment already have a quotation from this supplier
+            quoted_item_ids: set[uuid.UUID] = set()
+            if supplier:
+                item_ids = [ci.id for ci, _ in consignment_items]
+                existing_quotes_res = await session.execute(
+                    select(Quotation.inquiry_item_id).where(
+                        Quotation.inquiry_item_id.in_(item_ids),
+                        Quotation.supplier_id == supplier.id,
+                        Quotation.deleted_at.is_(None),
+                    )
+                )
+                quoted_item_ids = set(existing_quotes_res.scalars().all())
+
+            # A) Check if email body explicitly mentions a product code/name in this consignment
+            # We check the email body FIRST before subject, because reply subject lines retain the 1st product's name
             for c_item, c_prod in consignment_items:
                 cp_code = (c_prod.product_code or "").lower().strip()
                 cp_name = (c_prod.product_name or c_prod.product_name_tally or "").lower().strip()
-                if cp_code and len(cp_code) >= 3 and cp_code in (subject + " " + full_body_text).lower():
+                if cp_code and len(cp_code) >= 3 and cp_code in body_lower:
                     target_matched_item = c_item
                     break
-                if cp_name and len(cp_name) > 4 and cp_name in (subject + " " + full_body_text).lower():
+                if cp_name and len(cp_name) > 4 and cp_name in body_lower:
                     target_matched_item = c_item
                     break
 
-            # B) Thread-Aware Item Inheritance (For short follow-up / negotiation emails)
-            if not target_matched_item and supplier:
-                # 1. Inherit from recent message in this consignment with this supplier
-                prev_msg_res = await session.execute(
-                    select(InquiryMessage)
-                    .where(
-                        InquiryMessage.inquiry_id == matched_inquiry_id,
-                        InquiryMessage.supplier_id == supplier.id,
-                        InquiryMessage.inquiry_item_id.isnot(None),
-                    )
-                    .order_by(InquiryMessage.created_at.desc())
-                    .limit(1)
-                )
-                prev_msg = prev_msg_res.scalars().first()
-                if prev_msg and prev_msg.inquiry_item_id:
-                    for c_item, _ in consignment_items:
-                        if c_item.id == prev_msg.inquiry_item_id:
-                            target_matched_item = c_item
+            # B) If body didn't explicitly match, check subject line
+            if not target_matched_item:
+                for c_item, c_prod in consignment_items:
+                    cp_code = (c_prod.product_code or "").lower().strip()
+                    cp_name = (c_prod.product_name or c_prod.product_name_tally or "").lower().strip()
+                    if cp_code and len(cp_code) >= 3 and cp_code in subj_lower:
+                        target_matched_item = c_item
+                        break
+                    if cp_name and len(cp_name) > 4 and cp_name in subj_lower:
+                        target_matched_item = c_item
+                        break
+
+            # C) If target_matched_item already has a quote, but other items in this consignment are unquoted,
+            # check if body mentions any unquoted item
+            unquoted_items = [ci for ci, _ in consignment_items if ci.id not in quoted_item_ids]
+            if target_matched_item and target_matched_item.id in quoted_item_ids and unquoted_items:
+                for u_item in unquoted_items:
+                    u_prod = next((p for i, p in consignment_items if i.id == u_item.id), None)
+                    if u_prod:
+                        up_code = (u_prod.product_code or "").lower().strip()
+                        up_name = (u_prod.product_name or u_prod.product_name_tally or "").lower().strip()
+                        if (up_code and len(up_code) >= 3 and up_code in body_lower) or \
+                           (up_name and len(up_name) > 4 and up_name in body_lower):
+                            target_matched_item = u_item
                             break
 
-                # 2. Inherit from active quotation for this supplier in this consignment
-                if not target_matched_item:
-                    prev_quote_res = await session.execute(
-                        select(Quotation)
+            # D) Thread-Aware Item Inheritance (For follow-up / negotiation emails)
+            if not target_matched_item and supplier:
+                # If there are unquoted items, prefer the first unquoted item
+                if unquoted_items:
+                    target_matched_item = unquoted_items[0]
+                else:
+                    # 1. Inherit from recent message in this consignment with this supplier
+                    prev_msg_res = await session.execute(
+                        select(InquiryMessage)
                         .where(
-                            Quotation.supplier_id == supplier.id,
-                            Quotation.deleted_at.is_(None),
+                            InquiryMessage.inquiry_id == matched_inquiry_id,
+                            InquiryMessage.supplier_id == supplier.id,
+                            InquiryMessage.inquiry_item_id.isnot(None),
                         )
-                        .order_by(Quotation.created_at.desc())
+                        .order_by(InquiryMessage.created_at.desc())
                         .limit(1)
                     )
-                    prev_quote = prev_quote_res.scalars().first()
-                    if prev_quote:
+                    prev_msg = prev_msg_res.scalars().first()
+                    if prev_msg and prev_msg.inquiry_item_id:
                         for c_item, _ in consignment_items:
-                            if c_item.id == prev_quote.inquiry_item_id:
+                            if c_item.id == prev_msg.inquiry_item_id:
                                 target_matched_item = c_item
                                 break
+
+                    # 2. Inherit from active quotation for this supplier in this consignment
+                    if not target_matched_item:
+                        prev_quote_res = await session.execute(
+                            select(Quotation)
+                            .where(
+                                Quotation.supplier_id == supplier.id,
+                                Quotation.deleted_at.is_(None),
+                            )
+                            .order_by(Quotation.created_at.desc())
+                            .limit(1)
+                        )
+                        prev_quote = prev_quote_res.scalars().first()
+                        if prev_quote:
+                            for c_item, _ in consignment_items:
+                                if c_item.id == prev_quote.inquiry_item_id:
+                                    target_matched_item = c_item
+                                    break
 
             if not target_matched_item:
                 target_matched_item = consignment_items[0][0]
@@ -526,40 +597,48 @@ class EmailInboundWorker:
                     InquiryMessage.deleted_at.is_(None),
                 ).limit(1)
             )
-            if existing_msg_dup.scalar_one_or_none():
-                logger.info("Email message from %s with identical text already recorded in inquiry %s. Skipping duplicate.", sender_email, matched_inquiry_id)
-                return
+            is_duplicate_message = bool(existing_msg_dup.scalar_one_or_none())
+            if is_duplicate_message:
+                # If all items are already quoted by this supplier, it is truly handled chatter - safe to skip
+                if supplier and len(quoted_item_ids) >= len(consignment_items):
+                    logger.info("Email message from %s with identical text already recorded in inquiry %s. Skipping duplicate.", sender_email, matched_inquiry_id)
+                    if msg_id:
+                        self._save_seen_id(msg_id)
+                    return
+                logger.info("Email message from %s was logged but quotes are missing for supplier %s. Proceeding to extraction.", sender_email, getattr(supplier, 'id', None))
+            else:
+                inbound_msg = InquiryMessage(
+                    id=uuid.uuid4(),
+                    inquiry_id=matched_inquiry_id,
+                    inquiry_item_id=resolved_item_id,
+                    supplier_id=supplier.id if supplier else None,
+                    channel="email",
+                    direction=msg_direction,
+                    sender_name=msg_sender_name,
+                    sender_contact=sender_email,
+                    recipient_contact=msg_recipient,
+                    message_text=full_body_text,
+                )
+                session.add(inbound_msg)
+                await session.commit()
 
-            inbound_msg = InquiryMessage(
-                id=uuid.uuid4(),
-                inquiry_id=matched_inquiry_id,
-                inquiry_item_id=resolved_item_id,
-                supplier_id=supplier.id if supplier else None,
-                channel="email",
-                direction=msg_direction,
-                sender_name=msg_sender_name,
-                sender_contact=sender_email,
-                recipient_contact=msg_recipient,
-                message_text=full_body_text,
-            )
-            session.add(inbound_msg)
-            await session.commit()
+                # Broadcast WebSocket event for live update in Emails tab
+                await self._dispatcher.publish(
+                    module_channel("inquiries"),
+                    Event(
+                        entity="inquiry",
+                        entity_id=str(matched_inquiry_id),
+                        event_type="inquiry.message.created",
+                        changes={"inquiry_id": str(matched_inquiry_id), "item_id": str(resolved_item_id)},
+                    ),
+                )
 
-            # Broadcast WebSocket event for live update in Emails tab
-            await self._dispatcher.publish(
-                module_channel("inquiries"),
-                Event(
-                    entity="inquiry",
-                    entity_id=str(matched_inquiry_id),
-                    event_type="inquiry.message.created",
-                    changes={"inquiry_id": str(matched_inquiry_id), "item_id": str(resolved_item_id)},
-                ),
-            )
-
-            # 6. AI QUOTATION EXTRACTION GATE:
+            # 6. STRICT 1ST-CONVERSATION AI QUOTATION EXTRACTION GATE:
             # - Outbound emails from us: 0 AI calls
-            # - Follow-up / negotiation replies (Quotation already exists): 0 AI calls
             # - Unverified emails: 0 AI calls
+            # - Subsequent conversation / negotiation chatter: 0 AI calls
+            # AI MUST ONLY extract quotation for the FIRST quotation conversation.
+            # After sales team and supplier talk, AI must NOT extract or overwrite quotations.
             if is_outbound:
                 logger.info("Outbound email from company saved to Emails tab timeline. Skipping AI extraction (0 OpenAI tokens).")
                 return
@@ -568,21 +647,42 @@ class EmailInboundWorker:
                 logger.info("Inbound email received without verified supplier association. Skipping AI extraction.")
                 return
 
-            # Check if a quotation already exists for this (Item, Supplier) pair
-            existing_supp_quote = await session.execute(
-                select(Quotation).where(
-                    Quotation.inquiry_item_id == resolved_item_id,
-                    Quotation.supplier_id == supplier.id,
-                    Quotation.deleted_at.is_(None),
-                )
-            )
-            if existing_supp_quote.scalars().first():
+            # A) If ALL items in this consignment already have quotations from this supplier,
+            # this is subsequent negotiation / conversation chatter between sales team and supplier.
+            if len(quoted_item_ids) >= len(consignment_items):
                 logger.info(
-                    "Quotation already exists for supplier %s on item %s. Logged negotiation email to Emails tab without AI extraction (0 OpenAI tokens).",
+                    "All %d item(s) in consignment %s already have initial quotations from supplier %s. "
+                    "Recorded subsequent sales/supplier talk to Emails tab timeline without AI extraction (0 OpenAI tokens).",
+                    len(consignment_items),
+                    matched_inquiry_id,
                     supplier.id,
-                    resolved_item_id,
                 )
                 return
+
+            # B) If the resolved item already has a quotation from this supplier,
+            # and no other unquoted item is mentioned in the body or attachments:
+            if resolved_item_id in quoted_item_ids:
+                has_unquoted_match = False
+                for u_item in unquoted_items:
+                    u_prod = next((p for i, p in consignment_items if i.id == u_item.id), None)
+                    if u_prod:
+                        up_code = (u_prod.product_code or "").lower().strip()
+                        up_name = (u_prod.product_name or u_prod.product_name_tally or "").lower().strip()
+                        if (up_code and len(up_code) >= 3 and up_code in body_lower) or \
+                           (up_name and len(up_name) > 4 and up_name in body_lower):
+                            has_unquoted_match = True
+                            target_matched_item = u_item
+                            resolved_item_id = u_item.id
+                            break
+
+                if not has_unquoted_match and not attachments:
+                    logger.info(
+                        "Quotation already exists for supplier %s on item %s. "
+                        "Recorded subsequent sales/supplier talk to Emails tab timeline without AI extraction (0 OpenAI tokens).",
+                        supplier.id,
+                        resolved_item_id,
+                    )
+                    return
 
             # 7. FIRST VALID SUPPLIER QUOTATION REPLY: CALL OPENAI EXACTLY ONCE
             logger.info("First valid quotation reply detected for supplier %s on item %s. Running AI extraction...", supplier.id, resolved_item_id)
@@ -653,10 +753,22 @@ class EmailInboundWorker:
                 if not unit_p or float(unit_p) <= 0:
                     continue
 
+                # Match exact product line item from this consignment if specified
+                q_item_id = resolved_item_id
+                q_pcode = re.sub(r"[^a-z0-9]", "", (q_dict.get("product_code") or "").lower())
+                q_pname = (q_dict.get("product_name") or "").lower().strip()
+                for c_item, c_prod in consignment_items:
+                    cp_code = re.sub(r"[^a-z0-9]", "", (c_prod.product_code or "").lower())
+                    cp_name = (c_prod.product_name or c_prod.product_name_tally or "").lower().strip()
+                    if (q_pcode and cp_code and (q_pcode == cp_code or q_pcode in cp_code or cp_code in q_pcode)) or \
+                       (q_pname and len(q_pname) > 4 and (q_pname in cp_name or cp_name in q_pname)):
+                        q_item_id = c_item.id
+                        break
+
                 # Final check before creating quotation row
                 existing_check = await session.execute(
                     select(Quotation).where(
-                        Quotation.inquiry_item_id == resolved_item_id,
+                        Quotation.inquiry_item_id == q_item_id,
                         Quotation.supplier_id == quote_supplier_id,
                         Quotation.deleted_at.is_(None),
                     )
@@ -671,7 +783,7 @@ class EmailInboundWorker:
 
                 quote_count_res = await session.execute(
                     select(Quotation).where(
-                        Quotation.inquiry_item_id == resolved_item_id,
+                        Quotation.inquiry_item_id == q_item_id,
                         Quotation.deleted_at.is_(None),
                     )
                 )
@@ -702,9 +814,10 @@ class EmailInboundWorker:
 
                 quotation = Quotation(
                     id=uuid.uuid4(),
-                    inquiry_item_id=resolved_item_id,
+                    inquiry_item_id=q_item_id,
                     supplier_id=quote_supplier_id,
                     quote_number=quote_number,
+                    quantity=quoted_qty,
                     unit_price=quoted_unit_price,
                     currency=quote_currency,
                     total_cost=total_cost,
@@ -745,6 +858,9 @@ class EmailInboundWorker:
                     ),
                 )
                 logger.info("Created quotation %s (%s %s) for item %s", quote_number, quoted_unit_price, quote_currency, resolved_item_id)
+
+        if msg_id:
+            self._save_seen_id(msg_id)
 
 
 # Global worker instance
