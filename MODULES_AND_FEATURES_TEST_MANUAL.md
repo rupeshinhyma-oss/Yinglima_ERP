@@ -211,7 +211,7 @@ Multi-tab comprehensive modal for vendor master lifecycle.
 - **Factory / Office Visit Record**:
   - **Visited Factory / Office**: Radio/Select `Yes` / `No`.
   - **Visit Remarks**: Notes from physical plant inspection.
-  - **Visit Photos / Media Upload**: Multi-file uploader directly connected to **Supabase Cloud Storage** (`supplier-media` bucket) with preview thumbnails and delete action.
+  - **Visit Photos / Media Upload**: Multi-file uploader supporting **Supabase Cloud Storage** (`supplier-media` bucket) with transparent local disk fallback (`uploads/suppliers/`) served statically by FastAPI (`/uploads/suppliers/`), complete with preview thumbnails and delete action.
   - **Visit Video URL**: Link to factory inspection video (YouTube, Youku, Cloud Storage).
 - **Overall Remarks**: General procurement notes.
 
@@ -367,7 +367,7 @@ Manage complete vendor team directory:
 - **Dynamic Technical Specifications Builder:**
   - Key-Value attribute table (e.g. `Voltage: 380V`, `Power: 4.5kW`, `Speed: 120 pcs/min`).
 - **Cloud Media & Photo Upload:**
-  - Multi-image uploader uploading directly to **Supabase Storage** (`product-images` bucket).
+  - Multi-image uploader supporting **Supabase Storage** (`product-images` bucket) with automatic local filesystem fallback (`uploads/products/`) served statically by FastAPI (`/uploads/products/`), ensuring zero broken images even in air-gapped or non-Supabase deployments.
 
 ### Test Cases
 - [ ] Create a product, enter Length: `100`, Width: `50`, Height: `40`. Verify CBM calculates to `0.200000`.

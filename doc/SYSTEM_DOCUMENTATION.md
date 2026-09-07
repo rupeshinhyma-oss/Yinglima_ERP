@@ -37,6 +37,7 @@
 9. [Real-Time WebSocket & Event Synchronization](#9-real-time-websocket--event-synchronization)
 10. [Multi-Tier Caching Engine](#10-multi-tier-caching-engine)
 11. [Universal Bulk Import & Export Wizard](#11-universal-bulk-import--export-wizard)
+    - 11.1. [Media & File Storage Subsystem (Supabase & Local Disk Fallback)](#111-media--file-storage-subsystem-supabase--local-disk-fallback)
 12. [Frontend Architecture & Single-Flight Token Refresh](#12-frontend-architecture--single-flight-token-refresh)
 13. [Complete API Route & Endpoint Directory](#13-complete-api-route--endpoint-directory)
 14. [Developer & AI Integration Guide (Rules of Engagement)](#14-developer--ai-integration-guide-rules-of-engagement)
@@ -457,6 +458,19 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
 
 - **Workflow:** File Upload (.xlsx / .csv) $\rightarrow$ Header Fuzzy Matching $\rightarrow$ Column Mapping UI $\rightarrow$ Client-Side Validation $\rightarrow$ Transactional Batch Insertion $\rightarrow$ Error Log Report.
 - **Duplicate Prevention:** Validates existing database records by TIN, Email, Phone, or Code before commit.
+
+### 11.1. Media & File Storage Subsystem (Supabase & Local Disk Fallback)
+
+**Files:** `backend/app/common/storage.py`, `backend/app/main.py`
+
+- **Dual-Storage Engine:** Provides unified storage abstractions for product images, supplier factory media, and quotation attachments:
+  1. **Supabase Cloud Storage:** When `SUPABASE_BASE_URL` and `SUPABASE_AUTH_KEY` / `SUPABASE_SERVICE_KEY` are provided in `.env`, uploads files directly to target public buckets (`product-images`, `supplier-media`, `quotations`) via async HTTP (`httpx`), automatically creating the buckets if not present.
+  2. **Local Filesystem Fallback (Neon Architecture):** When running against Neon PostgreSQL without cloud bucket access, `save_uploaded_file` seamlessly saves uploaded files to local disk under `uploads/<local_subfolder>/` (`uploads/products/`, `uploads/suppliers/`).
+- **Static Mounting:** FastAPI mounts `uploads/` statically at both `/uploads` and `/static/uploads` via `StaticFiles(directory=uploads_dir)` in `app/main.py`, ensuring instant browser access.
+- **Filename Sanitization & MIME Resolution:**
+  - `sanitize_filename(filename)`: Strips path traversal characters (`..`, `/`, `\`), collapses repetitive delimiters, enforces safe ASCII tokens, and limits base names to 120 characters prefixed with a unique UUID (`{uuid4}_{clean_name}`).
+  - `guess_content_type(filename)`: Resolves standard MIME types (`image/jpeg`, `image/png`, `image/webp`, `video/mp4`, `application/pdf`, `.xlsx`, `.csv`).
+- **Database Persistence Model:** Database entities (`products.images`, `suppliers.media_urls`) store URL arrays (e.g. `["/uploads/products/xyz.webp"]` or `["https://...supabase.co/..."]`), providing 100% portability across cloud and local storage backends without requiring database schema alterations.
 
 ---
 
