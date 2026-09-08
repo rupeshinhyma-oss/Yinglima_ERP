@@ -65,8 +65,8 @@ class ProductRepository(BaseRepository[Product]):
             return
 
         for product in products:
-            product._planning_supplier_name = None
-            product._planning_supplier_city = None
+            setattr(product, "_planning_supplier_name", None)
+            setattr(product, "_planning_supplier_city", None)
 
         product_ids = [p.id for p in products]
         if not product_ids:
@@ -112,7 +112,8 @@ class ProductRepository(BaseRepository[Product]):
         for product in products:
             info = supplier_info_by_product_id.get(product.id)
             if info is not None:
-                product._planning_supplier_name, product._planning_supplier_city = info
+                setattr(product, "_planning_supplier_name", info[0])
+                setattr(product, "_planning_supplier_city", info[1])
 
     def _apply_search(self, stmt, term: str | None):
         """

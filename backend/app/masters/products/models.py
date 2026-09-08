@@ -110,6 +110,11 @@ class Product(Base, UUIDPrimaryKeyMixin, TimestampMixin, VersionMixin, SoftDelet
         index=True,
     )
 
+    # Allow unmapped transient instance attributes on this Declarative model
+    __allow_unmapped__ = True
+    _planning_supplier_name: str | None = None
+    _planning_supplier_city: str | None = None
+
     def __repr__(self) -> str:
         """Return a debug-friendly representation."""
         return f"<Product code={self.product_code!r} name={self.product_name!r}>"
