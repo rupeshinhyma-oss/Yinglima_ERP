@@ -1877,7 +1877,7 @@ async def wechat_inbound_message_callback(
                     supplier = await session.get(Supplier, c.supplier_id)
                     break
 
-    # 2. Match Consignment from Subject / Code (e.g. [#FB1], [SEA 1]) or active recent inquiries
+    # 2. Match Consignment / Inquiry from Subject / Code (e.g. [#FB1], [SEA 1]) or Product Code or Recent Outbound
     matched_inquiry: Inquiry | None = None
     all_codes_res = await session.execute(
         select(ConsignmentCode).where(ConsignmentCode.deleted_at.is_(None))
@@ -1911,6 +1911,55 @@ async def wechat_inbound_message_callback(
                 inq_res = await session.execute(select(Inquiry).where(Inquiry.consignment_code_id == cc_obj.id))
                 matched_inquiry = inq_res.scalars().first()
 
+    # 2b. Match by Product Code mentioned in message text (e.g. #DAR-01849, DAR-01849)
+    if not matched_inquiry:
+        items_with_products = await session.execute(
+            select(InquiryItem.inquiry_id, Product.product_code)
+            .join(Product, InquiryItem.product_id == Product.id)
+            .where(InquiryItem.deleted_at.is_(None))
+        )
+        for inq_id, p_code in items_with_products.all():
+            if p_code and len(p_code) >= 3:
+                clean_pcode = re.sub(r"[^a-zA-Z0-9]", "", p_code).lower()
+                clean_content = re.sub(r"[^a-zA-Z0-9]", "", content).lower()
+                if clean_pcode in clean_content:
+                    matched_inquiry = await session.get(Inquiry, inq_id)
+                    if matched_inquiry:
+                        break
+
+    # 2c. Match via recent outbound WeChat RFQ message to this sender
+    if not matched_inquiry:
+        recent_ob_any = await session.execute(
+            select(InquiryMessage)
+            .where(
+                InquiryMessage.direction == "outbound",
+                InquiryMessage.channel == "wechat",
+            )
+            .order_by(InquiryMessage.created_at.desc())
+            .limit(20)
+        )
+        for ob in recent_ob_any.scalars().all():
+            if ob.recipient_contact:
+                ob_clean = re.sub(r"\D", "", ob.recipient_contact)
+                if (from_user.lower() in ob.recipient_contact.lower() or 
+                    (from_user_digits and from_user_digits in ob_clean)):
+                    matched_inquiry = await session.get(Inquiry, ob.inquiry_id)
+                    if matched_inquiry:
+                        if not supplier and ob.supplier_id:
+                            supplier = await session.get(Supplier, ob.supplier_id)
+                        break
+                elif len(ob_clean) >= 11:
+                    try:
+                        resolved_uid = wecom.get_userid_by_mobile(ob.recipient_contact)
+                        if resolved_uid and resolved_uid.lower() == from_user.lower():
+                            matched_inquiry = await session.get(Inquiry, ob.inquiry_id)
+                            if matched_inquiry:
+                                if not supplier and ob.supplier_id:
+                                    supplier = await session.get(Supplier, ob.supplier_id)
+                                break
+                    except Exception:
+                        pass
+
     if not matched_inquiry:
         recent_inq_res = await session.execute(select(Inquiry).order_by(Inquiry.created_at.desc()).limit(1))
         matched_inquiry = recent_inq_res.scalars().first()
@@ -1918,8 +1967,17 @@ async def wechat_inbound_message_callback(
     if not matched_inquiry:
         return PlainTextResponse(content="success", status_code=200)
 
-    # If supplier wasn't matched by username/phone, match via recent outbound message on this inquiry
+    # If supplier wasn't matched by username/phone, match via company name in message text or outbound message
     if not supplier:
+        for s in all_suppliers_res.scalars().all():
+            if s.company_name and len(s.company_name) >= 5:
+                norm_s = re.sub(r"[^\w\s]", "", s.company_name.lower())
+                norm_c = re.sub(r"[^\w\s]", "", content_lower)
+                if norm_s in norm_c or (len(s.company_name) >= 6 and s.company_name.lower() in content_lower):
+                    supplier = s
+                    break
+
+    if not supplier and matched_inquiry:
         recent_ob_res = await session.execute(
             select(InquiryMessage)
             .where(
@@ -1931,9 +1989,9 @@ async def wechat_inbound_message_callback(
             .limit(10)
         )
         for ob in recent_ob_res.scalars().all():
-            if ob.recipient_contact and (from_user.lower() in ob.recipient_contact.lower() or ob.recipient_contact.lower() in from_user.lower()):
-                if ob.supplier_id:
-                    supplier = await session.get(Supplier, ob.supplier_id)
+            if ob.supplier_id:
+                supplier = await session.get(Supplier, ob.supplier_id)
+                if supplier:
                     break
 
     # 3. Record Inbound Message in Timeline
