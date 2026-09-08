@@ -153,6 +153,8 @@ async def get_all_quotation_documents(
     _current_user: CurrentUser = Depends(get_current_user),
 ) -> dict:
     """Fetch all quotations with product and supplier metadata for the Product & Supplier Gallery."""
+    if not service.quotation_repository:
+        return build_success_response(data=[], request_id=request.state.request_id)
     docs = await service.quotation_repository.get_all_quotation_documents()
     return build_success_response(
         data=docs,
@@ -1486,7 +1488,7 @@ async def inbound_quotation_webhook(
         text_content=payload.text,
         product_name=prod_name,
         product_code=prod_code,
-        target_quantity=float(item.quantity) if item.quantity else None,
+        target_quantity=item.quantity if item.quantity else None,
     )
 
     if not ai_result.is_quotation_detected or not ai_result.unit_price or ai_result.unit_price <= 0:
@@ -1496,8 +1498,8 @@ async def inbound_quotation_webhook(
             message="Message received and logged, but no commercial quotation price detected.",
         )
 
-    quoted_qty = ai_result.quantity or float(item.quantity or 1.0)
-    unit_p = float(ai_result.unit_price)
+    quoted_qty = float(ai_result.quantity or item.quantity or 1.0)
+    unit_p = ai_result.unit_price
 
     quote_count_res = await session.execute(
         select(Quotation).where(
@@ -1688,6 +1690,7 @@ async def send_inquiry_email_message(
         """
 
     # Format email content
+    user_name = getattr(current_user, "full_name", None) or current_user.username or "Yinglima Procurement Team"
     html_body = f"""
     <div style="font-family: Arial, sans-serif; font-size: 14px; color: #1e293b; line-height: 1.6;">
         <div style="white-space: pre-wrap;">{payload.body}</div>
@@ -1695,7 +1698,7 @@ async def send_inquiry_email_message(
         {quoted_html}
         <br/><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
         <div style="font-size: 12px; color: #64748b;">
-            Sent by <strong>{current_user.full_name or 'Yinglima Procurement Team'}</strong> via Yinglima ERP.<br/>
+            Sent by <strong>{user_name}</strong> via Yinglima ERP.<br/>
             You can reply directly to this email.
         </div>
     </div>
@@ -1742,7 +1745,7 @@ async def send_inquiry_email_message(
         supplier_id=supplier_id,
         channel="email",
         direction="outbound",
-        sender_name=current_user.full_name or "Yinglima Procurement",
+        sender_name=getattr(current_user, "full_name", None) or current_user.username or "Yinglima Procurement",
         sender_contact=settings.SMTP_FROM_EMAIL,
         recipient_contact=", ".join(clean_recipients),
         message_text=f"Subject: {payload.subject}\n\n{payload.body}",
@@ -1879,7 +1882,7 @@ async def wechat_inbound_message_callback(
     all_codes_res = await session.execute(
         select(ConsignmentCode).where(ConsignmentCode.deleted_at.is_(None))
     )
-    all_codes = all_codes_res.scalars().all()
+    all_codes = list(all_codes_res.scalars().all())
     all_codes.sort(key=lambda c: len(c.code or ""), reverse=True)
     content_lower = content.lower()
     for cc in all_codes:
@@ -2048,10 +2051,10 @@ async def wechat_inbound_message_callback(
                 continue
 
             target_item = consignment_items[0][0]
-            ai_pcode = re.sub(r"[^a-z0-9]", "", (q_dict.get("product_code") or "").lower())
+            ai_pcode = re.sub(r"[^a-z0-9]", "", str(q_dict.get("product_code") or "").lower())
             if ai_pcode:
                 for c_item, c_prod in consignment_items:
-                    cp_code = re.sub(r"[^a-z0-9]", "", (c_prod.product_code or "").lower())
+                    cp_code = re.sub(r"[^a-z0-9]", "", str(c_prod.product_code or "").lower())
                     if cp_code and (ai_pcode == cp_code or ai_pcode in cp_code or cp_code in ai_pcode):
                         target_item = c_item
                         break
@@ -2082,23 +2085,23 @@ async def wechat_inbound_message_callback(
                 )
                 continue
 
-            quoted_qty = q_dict.get("quantity") or float(target_item.quantity or 1.0)
+            quoted_qty = float(q_dict.get("quantity") or target_item.quantity or 1.0)
             quoted_unit_price = float(unit_p)
             quote_currency = q_dict.get("currency") or ai_result.currency or "CNY"
             total_cost = round(quoted_qty * quoted_unit_price, 2)
 
             t_parts = []
             if q_dict.get("price_terms"):
-                t_parts.append(q_dict["price_terms"])
+                t_parts.append(str(q_dict["price_terms"]))
             if q_dict.get("payment_terms"):
-                t_parts.append(q_dict["payment_terms"])
+                t_parts.append(str(q_dict["payment_terms"]))
             terms_combined = " • ".join(t_parts) if t_parts else None
 
             exp_date = None
             date_val = q_dict.get("earliest_available_date") or ai_result.earliest_available_date
             if date_val:
                 try:
-                    exp_date = datetime.strptime(date_val, "%Y-%m-%d").date()
+                    exp_date = datetime.strptime(str(date_val), "%Y-%m-%d").date()
                 except Exception:
                     pass
 
