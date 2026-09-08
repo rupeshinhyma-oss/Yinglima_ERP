@@ -570,7 +570,7 @@ Manage complete vendor team directory:
       - **"Message Body" Textarea**: Clean, spacious multiline composer for typing replies/messages.
       - **"📎 Attach File"**: Supabase Storage file/PDF uploader.
       - **Action Toolbar**: Primary blue **`✈️ Send Email`** button with async SMTP dispatch + Discard button.
-    - **Live Dynamic Polling & WebSocket Sync**: Automatically refreshes feed every 2.5 seconds.
+    - **Smart Hybrid Real-Time & Fallback Sync**: Primary live updates arrive instantly via WebSocket (sub-second zero-latency display), backed by a gentle 15-second visibility-aware fallback poll that automatically pauses when the browser tab is hidden and refreshes immediately upon window focus to eliminate network congestion and CPU overhead.
   - 📋 **`Bulk Tally Entry Post` Button:** Select multiple line items and mark them as `Tally Entry Posted` in one batch operation.
 - **Line Items Table Columns:**
   1. **Checkbox:** Select row for bulk RFQ dispatch or bulk Tally posting.
