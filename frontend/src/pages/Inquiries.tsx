@@ -1059,15 +1059,29 @@ function ItemsView({
     }
   }, [selectedItem?.id, loadQuotations]);
 
-  // Seamless dynamic live sync every 2.5 seconds: ensures newly arriving quotes and emails appear immediately without manual refresh
+  // Smart hybrid sync: Primary real-time updates arrive instantly via WebSocket (useLiveModule above).
+  // This gentle fallback sync (every 15s) guarantees data freshness if WebSocket reconnects,
+  // automatically pausing when the tab is hidden and instantly refreshing upon window focus.
   useEffect(() => {
     const activeId = selectedItem?.id || selectedItemId;
     if (!activeId) return;
-    const interval = setInterval(() => {
-      void loadQuotations(activeId, true);
-      void loadMessages(true);
-    }, 2500);
-    return () => clearInterval(interval);
+
+    const syncIfVisible = () => {
+      if (document.visibilityState === "visible") {
+        void loadQuotations(activeId, true);
+        void loadMessages(true);
+      }
+    };
+
+    const interval = setInterval(syncIfVisible, 15000);
+    window.addEventListener("focus", syncIfVisible);
+    document.addEventListener("visibilitychange", syncIfVisible);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", syncIfVisible);
+      document.removeEventListener("visibilitychange", syncIfVisible);
+    };
   }, [selectedItem?.id, selectedItemId, loadQuotations, loadMessages]);
 
   // Filtered products on left
