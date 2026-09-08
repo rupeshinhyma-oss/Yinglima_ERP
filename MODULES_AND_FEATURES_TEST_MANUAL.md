@@ -563,6 +563,12 @@ Manage complete vendor team directory:
       - **Subsequent Sales / Negotiation Chatter**: Once the initial quote exists, subsequent conversations between the sales team and supplier (discounts, delivery questions, terms) bypass AI extraction completely (0 OpenAI tokens). Displays: `💬 Inbound Discussion / Negotiation Thread` (or `💬 Supplier WeChat Discussion`).
       - **Multi-Product RFQ Routing**: When an RFQ contains multiple products (e.g. Band Sealer & Ink Roll), the inbound worker checks message bodies first to ensure quotes for secondary items route to their respective line items without colliding or being blocked by the first item's quote.
       - **Multi-Supplier & Cross-Consignment Isolation**: Supplier A, B, and C replies remain strictly isolated side-by-side in the Quotation Matrix, and quotes for identical products in different consignments (e.g. FB1 vs INH1) never cross-leak.
+      - **WeCom / WeChat Intelligent Inbound Matching**:
+        - **Consignment Code Detection**: Auto-detects tagged tags like `[#YG7]`, `#YG7`, or `YG7` in message text.
+        - **Product Code Auto-Resolution**: When a supplier replies without quoting the consignment tag, the webhook auto-matches line items via product codes present in the reply (e.g. `#DAR-01849` -> automatically matches the inquiry containing that item).
+        - **Outbound Recipient Correlation**: If neither code is explicitly typed, matches the reply to the most recent outbound RFQ sent to the supplier's WeCom UserID / mobile number.
+        - **Supplier Signature Matching**: Auto-maps the supplier entity if the company name appears in the message signature (e.g. *Wenzhou Brother Machinery Co., Ltd.*).
+        - **Instant AI Quotation Parsing**: Automatically generates `QT-AUTO-XX` with unit price, currency, quantity, and payment/delivery terms, and logs the discussion in the WeChat Messages timeline.
     - **Interactive Inline Email Composer (Gmail/Figma-Style)**:
       - Embedded directly at the bottom of the Email timeline.
       - **"To:" Recipient Field**: Quick dropdown of suppliers or free-text comma-separated email entry.
