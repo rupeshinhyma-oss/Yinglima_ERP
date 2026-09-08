@@ -1498,7 +1498,7 @@ async def inbound_quotation_webhook(
             message="Message received and logged, but no commercial quotation price detected.",
         )
 
-    quoted_qty = float(ai_result.quantity or item.quantity or 1.0)
+    quoted_qty = ai_result.quantity or item.quantity or 1.0
     unit_p = ai_result.unit_price
 
     quote_count_res = await session.execute(
