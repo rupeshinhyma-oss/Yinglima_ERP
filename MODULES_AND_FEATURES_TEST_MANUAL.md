@@ -521,6 +521,17 @@ Manage complete vendor team directory:
 - **Toolbar Actions:**
   - ➕ **`+ Add Line Item` Button & Modal:**
     - Product picker (loads SKU, image, category), Quantity, Primary UOM, Target Price, Brand Preference, Remarks.
+  - 📥 **`Export` Button & Format Dropdown Menu (Option 1):**
+    - **UI Placement**: Top-right header action bar beside `← Back` and `+ Add Item`.
+    - **Interactive Format Dropdown**:
+      - 🟢 **XLSX (Excel Spreadsheet)**: Generates a styled `.xlsx` workbook via openpyxl with sheet title named after consignment code (e.g. `FB1 Items`).
+      - 🔵 **CSV (CSV Delimited)**: Standard UTF-8 with BOM (`utf-8-sig`) compatible with Microsoft Excel, LibreOffice Calc, and Google Sheets.
+    - **Exported Columns**: `Sr No`, `Consignment Code`, `Buyer Company`, `Product Code`, `Product Name`, `Quantity`, `UOM`, `Brand Preference`, `Product Specs / Remarks`, `License Required`, `Item Status`, `Tally Entry Posted`, `Quotation Count`, `Best Quote Price`, `Best Quote Currency`, `Selected Supplier`, `Procurement Remarks`.
+    - **Dynamic Quotation Enrichment**: For each line item, the export resolves the approved quotation bid or the lowest received supplier unit price, including currency and supplier company name.
+    - **State Handling**:
+      - **Disabled State**: Button disabled (`opacity: 0.6`, `cursor: not-allowed`) with tooltip `"No items to export"` when `items.length === 0`.
+      - **Loading State**: Displays `"Exporting..."` with spinner while fetching binary blob.
+    - **File Naming Standard**: `Inquiry_{ConsignmentCode}_{YYYY-MM-DD}.{format}` (e.g. `Inquiry_FB1_2026-09-08.xlsx`).
   - ⚡ **`+ Bulk Add Items` Button & Modal:**
     - Multi-row product picker from Product Master with live search. Check multiple products and enter quantities simultaneously.
   - 📤 **`Dispatch Bulk RFQs` Button & Modal:**
@@ -585,6 +596,9 @@ Manage complete vendor team directory:
 - [ ] Return to Layer 3 Items view, verify Received Quotes badge updates to `1 Quote`.
 - [ ] Open Quotation Matrix Comparison modal, verify Lowest Price is highlighted in green, click `Approve Quote`, verify status turns to `Approved`.
 - [ ] Click Tally Status toggle badge on a line item, verify it toggles between `Pending Tally` and `Tally Posted` instantly.
+- [ ] In Layer 3 Items view, click the **Export** button on the top-right toolbar. Select **Excel Spreadsheet (XLSX)** from the dropdown. Verify browser downloads `Inquiry_{Code}_{Date}.xlsx`. Open the file and verify columns (`Sr No`, `Product Code`, `Product Name`, `Quantity`, `UOM`, `Best Quote Price`, `Selected Supplier`, etc.) match active items.
+- [ ] In Layer 3 Items view, click the **Export** button and select **CSV Delimited (CSV)**. Verify browser downloads `Inquiry_{Code}_{Date}.csv` and file opens cleanly in Excel without character encoding issues.
+- [ ] Open a consignment with 0 items. Verify the **Export** button is disabled with tooltip `"No items to export"`.
 
 ---
 

@@ -17,7 +17,7 @@ import { AppShell } from "@/components/AppShell";
 import { Banner, Can, TableMessageRow } from "@/components/ui";
 import { SearchableDropdown, SearchableDropdownMultiPanel, type DropdownOption, type FetchOptions } from "@/components/SearchableDropdown";
 import { SelectField, TextAreaField, TextField } from "@/components/fields";
-import { apiDelete, apiGet, apiPatch, apiPost, toQueryString } from "@/lib/api";
+import { apiDelete, apiGet, apiPatch, apiPost, downloadExport, toQueryString } from "@/lib/api";
 import { useLiveModule } from "@/lib/live/useLive";
 import { useAuth, usePendingGuard } from "@/lib/hooks";
 import { autoTitleCase } from "@/utils/text";
@@ -961,6 +961,8 @@ function ItemsView({
   const [productInfoTarget, setProductInfoTarget] = useState<InquiryItem | null>(null);
   const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null);
   const [editQtyItem, setEditQtyItem] = useState<{ id: string; qty: number } | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
 
   const { guard: guardRowAction } = usePendingGuard<string>();
 
@@ -1009,6 +1011,25 @@ function ItemsView({
   });
 
   const items = inquiry?.items ?? [];
+
+  const handleExport = useCallback(
+    async (format: "xlsx" | "csv" = "xlsx") => {
+      try {
+        setExporting(true);
+        setExportMenuOpen(false);
+        const code = inquiry?.consignment_code || codeNames[inquiry?.consignment_code_id || ""] || "Consignment";
+        const safeCode = code.replace(/[^a-zA-Z0-9_-]/g, "_");
+        const today = new Date().toISOString().slice(0, 10);
+        const fileBaseName = `Inquiry_${safeCode}_${today}`;
+        await downloadExport(`/inquiries/${inquiryId}`, format, fileBaseName);
+      } catch (err) {
+        onError(err);
+      } finally {
+        setExporting(false);
+      }
+    },
+    [inquiry, codeNames, inquiryId, onError]
+  );
 
   // Selected item reference
   const selectedItem = useMemo(() => {
@@ -1358,6 +1379,116 @@ function ItemsView({
           >
             ← Back
           </button>
+
+          {/* Export Consignment Line Items */}
+          <div style={{ position: "relative" }}>
+            <button
+              type="button"
+              onClick={() => setExportMenuOpen((prev) => !prev)}
+              disabled={exporting || items.length === 0}
+              style={{
+                background: "#ffffff",
+                border: "1px solid #cbd5e1",
+                color: "#0f172a",
+                fontWeight: 600,
+                fontSize: "13px",
+                padding: "7px 14px",
+                borderRadius: "8px",
+                cursor: exporting || items.length === 0 ? "not-allowed" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                opacity: exporting || items.length === 0 ? 0.6 : 1,
+              }}
+              title={items.length === 0 ? "No items to export" : "Export inquiry consignment line items"}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              <span>{exporting ? "Exporting..." : "Export"}</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+
+            {exportMenuOpen && (
+              <>
+                <div
+                  onClick={() => setExportMenuOpen(false)}
+                  style={{ position: "fixed", inset: 0, zIndex: 998 }}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 4px)",
+                    right: 0,
+                    background: "#ffffff",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "8px",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                    padding: "4px",
+                    zIndex: 999,
+                    minWidth: "165px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "2px",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => void handleExport("xlsx")}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      padding: "8px 12px",
+                      fontSize: "12.5px",
+                      fontWeight: 500,
+                      color: "#1e293b",
+                      background: "none",
+                      border: "none",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      width: "100%",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#f1f5f9")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                  >
+                    <span style={{ color: "#16a34a", fontWeight: 700, fontSize: "11px", background: "#dcfce7", padding: "2px 5px", borderRadius: "4px" }}>XLSX</span>
+                    Excel Spreadsheet
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleExport("csv")}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      padding: "8px 12px",
+                      fontSize: "12.5px",
+                      fontWeight: 500,
+                      color: "#1e293b",
+                      background: "none",
+                      border: "none",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      width: "100%",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#f1f5f9")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                  >
+                    <span style={{ color: "#2563eb", fontWeight: 700, fontSize: "11px", background: "#dbeafe", padding: "2px 5px", borderRadius: "4px" }}>CSV</span>
+                    CSV Delimited
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           <Can permission="inquiry.create">
             <button
               type="button"

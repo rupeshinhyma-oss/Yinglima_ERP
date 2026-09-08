@@ -1,7 +1,7 @@
 # Enterprise ERP System — Unified Architecture, Feature & Technical Manual
 
 > **System Version:** 1.1.0 (Production)  
-> **Last Updated:** September 7, 2026 (Products Master server-side pagination & comprehensive search upgrade, Vite proxy timeout resolution, Neon Serverless Singapore ap-southeast-1 migration, OCC version column alignment migration f9a0b1c2d3e4, planning_sheets item_description support, and 100% data parity verification)  
+> **Last Updated:** September 8, 2026 (Inquiry Consignment Line-Items Excel/CSV Export subsystem, media storage subsystem & local disk fallback, transient product attributes type error resolution, Products Master server-side pagination & comprehensive search upgrade, Vite proxy timeout resolution, Neon Serverless migration)  
 > **Repository:** `https://github.com/rupeshinhyma-oss/Yinglima_ERP.git`  
 > **Architectural Pattern:** Modular Async Monolith (FastAPI) + React 18 SPA (Vite) + Real-Time WebSocket Event Bus  
 > **Target Audience:** Systems Architects, Software Engineers, DevOps, and Autonomous AI Coding Assistants.  
@@ -430,6 +430,8 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
   - **Automated Inbound Email Worker (`email_inbound_worker.py`):** Listens via IMAP for incoming supplier replies. Prioritizes exact sender email matching against `SupplierEmail` and `SupplierContact` directories before fallback text search (strictly excluding host procurement company names like "Yinglima" to prevent false positive supplier resolution from email signatures). Robust consignment code matching scans all registered database consignment codes against the subject line (supporting multi-word codes with spaces like `[SEA 1]`, prefix brackets, and case variations) and falls back to explicit product code matching (`#FNB-02391`) before supplier historical RFQ lookup. When an unquoted supplier reply arrives, extracts quotation unit prices, quantities, lead times, and terms via OpenAI GPT-4o-mini, automatically inserts `Quotation` records with mandatory `quantity` fields and product-specific line item matching, and broadcasts real-time WebSocket events.
   - **WeChat Callback Ingestion (`routes.py: /wechat/callback`):** Handles incoming supplier replies from WeChat/WeCom. Decrypts XML payloads, stores conversational message history, accurately extracts consignment codes with spaces and brackets, enforces the 1st-conversation extraction policy (skipping AI for subsequent chatter), and creates initial quotation rows with real-time UI notification.
   - **Supplier Thread Resolution:** Dynamic fallback lookup maps unlinked message sender emails to registered suppliers and prevents duplicate vendor dropdown entries.
+  - **Inquiry Consignment Line-Items Export (`GET /inquiries/{id}/export`):** Exports all active line items of a consignment to Excel (`.xlsx`) or CSV (`.csv`) via `InquiryService.export_consignment`. Generates clean tabular spreadsheets with columns: `Sr No`, `Consignment Code`, `Buyer Company`, `Product Code`, `Product Name`, `Quantity`, `UOM`, `Brand Preference`, `Product Specs / Remarks`, `License Required`, `Item Status`, `Tally Entry Posted`, `Quotation Count`, `Best Quote Price`, `Best Quote Currency`, `Selected Supplier`, and `Procurement Remarks`. Automatically resolves the lowest or approved quotation bid per line item and logs immutable audit records (`AuditAction.EXPORT`).
+
 
 ---
 
@@ -577,6 +579,7 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
 | **Inquiries**| `POST` | `/api/v1/inquiries/inbound-webhook` | Inbound webhook for WeChat/Email auto-ingestion | Public (API / Webhook) |
 | **Inquiries**| `GET` | `/api/v1/inquiries/items/{item_id}/quotations` | List quotations with turnaround & lead times | `inquiry.read` |
 | **Inquiries**| `GET` | `/api/v1/inquiries/quotations/documents` | Fetch all quotation sheets for Gallery | `inquiry.read` |
+| **Inquiries**| `GET` | `/api/v1/inquiries/{id}/export` | Export consignment line items to Excel/CSV | `inquiry.read` |
 | **Inquiries**| `POST` | `/api/v1/inquiries/bulk-tally-post` | Bulk mark items as Tally Entry Posted | `inquiry.update` |
 | **Public** | `GET` | `/api/v1/public/quotes/{token}` | Fetch RFQ specifications for vendor | Public (Token Validated) |
 | **Public** | `POST` | `/api/v1/public/quotes/{token}` | Submit vendor quote bids & lead times | Public (Token Validated) |

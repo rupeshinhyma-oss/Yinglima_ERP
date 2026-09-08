@@ -170,6 +170,105 @@ class InquiryService:
         inquiry_dict["items"] = items
         return inquiry_dict
 
+    async def export_consignment(self, inquiry_id: uuid.UUID, file_format: str = "xlsx") -> bytes:
+        """
+        Export all line items for a specific consignment to CSV or XLSX
+        with enriched product, UOM, and supplier quotation details.
+        """
+        from app.masters.import_export import build_csv_export, build_excel_export
+
+        inquiry_data = await self.get_inquiry_with_details(inquiry_id)
+        consignment_code = inquiry_data.get("consignment_code") or "N/A"
+        buyer_name = inquiry_data.get("buyer_name") or "N/A"
+        items = inquiry_data.get("items") or []
+
+        headers = [
+            "Sr No",
+            "Consignment Code",
+            "Buyer Company",
+            "Product Code",
+            "Product Name",
+            "Quantity",
+            "UOM",
+            "Brand Preference",
+            "Product Specs / Remarks",
+            "License Required",
+            "Item Status",
+            "Tally Entry Posted",
+            "Quotation Count",
+            "Best Quote Price",
+            "Best Quote Currency",
+            "Selected Supplier",
+            "Procurement Remarks",
+        ]
+
+        rows: list[dict[str, Any]] = []
+        for idx, item in enumerate(items, start=1):
+            item_id = item.get("id")
+            best_quote_price = ""
+            best_quote_currency = ""
+            selected_supplier = ""
+
+            if self.quotation_repository and item_id:
+                try:
+                    quotes = await self.quotation_repository.list_for_item_with_details(item_id)
+                    if quotes:
+                        # Prioritize approved quotation, otherwise lowest unit price
+                        approved_quotes = [
+                            q for q in quotes if q.get("status") in (QuotationStatus.APPROVED.value, "approved")
+                        ]
+                        target_quote = (
+                            approved_quotes[0]
+                            if approved_quotes
+                            else min(
+                                quotes,
+                                key=lambda q: float(q.get("unit_price") or float("inf")),
+                            )
+                        )
+                        if target_quote:
+                            u_price = target_quote.get("unit_price")
+                            if u_price is not None:
+                                best_quote_price = f"{float(u_price):,.2f}"
+                            best_quote_currency = target_quote.get("currency") or "CNY"
+                            selected_supplier = target_quote.get("supplier_name") or ""
+                except Exception:
+                    pass
+
+            status_val = item.get("status")
+            status_str = (
+                status_val.value
+                if hasattr(status_val, "value")
+                else str(status_val or "proposed").capitalize()
+            )
+
+            rows.append(
+                {
+                    "Sr No": idx,
+                    "Consignment Code": consignment_code,
+                    "Buyer Company": buyer_name,
+                    "Product Code": item.get("product_code") or "",
+                    "Product Name": item.get("product_name") or item.get("product_name_tally") or "",
+                    "Quantity": item.get("quantity") if item.get("quantity") is not None else "",
+                    "UOM": item.get("uom_name") or item.get("uom_code") or "",
+                    "Brand Preference": item.get("brand_preference") or "",
+                    "Product Specs / Remarks": item.get("product_specs_remarks") or "",
+                    "License Required": "Yes" if item.get("requires_license") else "No",
+                    "Item Status": status_str,
+                    "Tally Entry Posted": "Yes" if item.get("tally_entry_posted") else "No",
+                    "Quotation Count": item.get("quotation_count") or 0,
+                    "Best Quote Price": best_quote_price,
+                    "Best Quote Currency": best_quote_currency,
+                    "Selected Supplier": selected_supplier,
+                    "Procurement Remarks": item.get("procurement_remarks") or "",
+                }
+            )
+
+        sheet_title = f"{consignment_code} Items"[:31]
+        if file_format.lower() == "csv":
+            return build_csv_export(headers, rows)
+        return build_excel_export(headers, rows, sheet_title=sheet_title)
+
+
     async def _refresh_rollup(self, inquiry_id: uuid.UUID) -> Inquiry:
         """Recompute and persist one consignment's Layer-1 rollup fields from its current items."""
         inquiry = await self.get_inquiry_or_raise(inquiry_id)

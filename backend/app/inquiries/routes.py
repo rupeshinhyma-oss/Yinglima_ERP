@@ -26,7 +26,7 @@ from datetime import datetime
 
 logger = logging.getLogger("inquiry_routes")
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -392,6 +392,49 @@ async def get_inquiry(
     inquiry_data = await service.get_inquiry_with_details(inquiry_id)
     data = InquiryRead.model_validate(inquiry_data).model_dump(mode="json")
     return build_success_response(data=data, request_id=request.state.request_id)
+
+
+@router.get("/{inquiry_id}/export", summary="Export inquiry consignment line items to Excel/CSV")
+async def export_consignment(
+    inquiry_id: uuid.UUID,
+    request: Request,
+    format: str = "xlsx",
+    service: InquiryService = Depends(get_inquiry_service),
+    current_user: CurrentUser = Depends(get_current_user),
+    audit_service: AuditService = Depends(get_audit_service),
+) -> Response:
+    """Export all line items for an inquiry consignment as an Excel (.xlsx) or CSV file."""
+    file_format = format.lower()
+    if file_format not in ("csv", "xlsx"):
+        file_format = "xlsx"
+
+    inquiry_data = await service.get_inquiry_with_details(inquiry_id)
+    consignment_code = inquiry_data.get("consignment_code") or "Inquiry"
+    safe_code = "".join(c for c in consignment_code if c.isalnum() or c in ("-", "_")).strip() or "Inquiry"
+
+    content = await service.export_consignment(inquiry_id, file_format)
+
+    await _record_action(
+        audit_service=audit_service,
+        request=request,
+        action=AuditAction.EXPORT,
+        actor=current_user,
+        entity_id=inquiry_id,
+        description=f"Exported consignment {consignment_code!r} line items as {file_format}.",
+    )
+
+    media_type = (
+        "text/csv"
+        if file_format == "csv"
+        else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    today_str = datetime.now().strftime("%d-%m-%Y")
+    filename = f"Inquiry_{safe_code}_{today_str}.{file_format}"
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @router.patch("/{inquiry_id}/items/{item_id}", summary="Update an inquiry item (quantity, brand pref, specs)")
