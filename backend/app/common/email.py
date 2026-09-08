@@ -207,12 +207,12 @@ async def send_bulk_rfq_email(
         return False
 
     ref_tag = f"[{consignment_code}]" if consignment_code else ""
+    ref_str = f" [{consignment_code}]" if consignment_code else ""
     if custom_subject and custom_subject.strip():
         subject = custom_subject.strip()
         if ref_tag and ref_tag not in subject:
             subject = f"{ref_tag} {subject}"
     else:
-        ref_str = f" [{consignment_code}]" if consignment_code else ""
         subject = f"Request for Quotation{ref_str}: {len(items)} Items Required - Yinglima Procurement"
 
     if custom_body and custom_body.strip():
