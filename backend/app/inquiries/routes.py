@@ -71,6 +71,7 @@ from app.inquiries.schemas import (
     RFQCreate,
     RFQRead,
     SendInquiryEmailPayload,
+    SendInquiryWeChatMessagePayload,
 )
 from app.inquiries.models import Inquiry, InquiryItem, InquiryMessage, Quotation, RFQ
 from app.inquiries.wechat_service import get_wecom_service
@@ -1784,6 +1785,133 @@ async def send_inquiry_email_message(
         },
         request_id=request.state.request_id,
         message=f"Email successfully sent to {', '.join(clean_recipients)}.",
+    )
+
+
+@router.post("/{inquiry_id}/send-wechat-message", summary="Send a direct WeChat message to supplier from within the Inquiries WeChat Messages tab")
+async def send_inquiry_wechat_message(
+    inquiry_id: uuid.UUID,
+    payload: SendInquiryWeChatMessagePayload,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+    event_dispatcher: EventDispatcher = Depends(get_event_dispatcher),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Dispatches a direct chat message to recipient supplier(s) via Tencent WeCom API and records it in the communication timeline."""
+    clean_recipients = [w.strip() for w in payload.to_wechat if w and w.strip()]
+    if not clean_recipients:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one valid recipient WeChat number or UserID is required.",
+        )
+    if not payload.message.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Message content cannot be empty.",
+        )
+
+    # Verify inquiry exists
+    inquiry = await db.get(Inquiry, inquiry_id)
+    if not inquiry or inquiry.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Inquiry not found.",
+        )
+
+    # Dispatch text message to WeCom
+    wecom = get_wecom_service()
+    wecom_res = wecom.send_text_message(
+        to_users=clean_recipients,
+        content=payload.message.strip(),
+    )
+    err_code = wecom_res.get("errcode") if isinstance(wecom_res, dict) else -1
+    err_msg = wecom_res.get("errmsg", "Unknown error") if isinstance(wecom_res, dict) else str(wecom_res)
+
+    if err_code != 0:
+        logger.error("WeCom dispatch error: %s (code: %s)", err_msg, err_code)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"WeCom dispatch failed: {err_msg} (errcode: {err_code})",
+        )
+
+    # Validate item ID if provided
+    valid_item_id = payload.inquiry_item_id
+    if valid_item_id:
+        item_check = await db.get(InquiryItem, valid_item_id)
+        if not item_check or item_check.inquiry_id != inquiry_id or item_check.deleted_at is not None:
+            valid_item_id = None
+
+    # Resolve supplier if passed or by wechat phone/contact
+    supplier_id = payload.supplier_id
+    if supplier_id:
+        supp_check = await db.get(Supplier, supplier_id)
+        if not supp_check or supp_check.deleted_at is not None:
+            supplier_id = None
+    if not supplier_id:
+        for rec in clean_recipients:
+            digits = re.sub(r"\D", "", rec)
+            if digits:
+                s_res = await db.execute(
+                    select(Supplier.id)
+                    .where(
+                        (Supplier.contact_wechat_number.contains(digits)) |
+                        (Supplier.wechat_number.contains(digits)) |
+                        (Supplier.contact_calling_number.contains(digits)) |
+                        (Supplier.phone.contains(digits))
+                    )
+                    .limit(1)
+                )
+                supp_match = s_res.scalar_one_or_none()
+                if supp_match:
+                    supplier_id = supp_match
+                    break
+
+    sender_display = getattr(current_user, "full_name", None) or current_user.username or "Salesperson"
+
+    # Log outbound message in InquiryMessage table
+    new_msg = InquiryMessage(
+        id=uuid.uuid4(),
+        inquiry_id=inquiry_id,
+        inquiry_item_id=valid_item_id,
+        supplier_id=supplier_id,
+        channel="wechat",
+        direction="outbound",
+        sender_name=f"{sender_display} (ERP)",
+        sender_contact="Yinglima ERP Bot",
+        recipient_contact=", ".join(clean_recipients),
+        message_text=payload.message.strip(),
+    )
+    db.add(new_msg)
+    await db.commit()
+
+    # Broadcast Live WebSocket update
+    await event_dispatcher.publish(
+        module_channel("inquiries"),
+        Event(
+            entity="inquiry",
+            entity_id=str(inquiry_id),
+            event_type="inquiry.message.created",
+            changes={"inquiry_id": str(inquiry_id), "item_id": str(valid_item_id) if valid_item_id else None},
+        ),
+    )
+
+    return build_success_response(
+        data={
+            "id": str(new_msg.id),
+            "inquiry_id": str(new_msg.inquiry_id),
+            "inquiry_item_id": str(new_msg.inquiry_item_id) if new_msg.inquiry_item_id else None,
+            "supplier_id": str(new_msg.supplier_id) if new_msg.supplier_id else None,
+            "channel": "wechat",
+            "direction": "outbound",
+            "sender_name": new_msg.sender_name,
+            "sender_contact": new_msg.sender_contact,
+            "recipient_contact": new_msg.recipient_contact,
+            "message_text": new_msg.message_text,
+            "created_at": new_msg.created_at.isoformat() if new_msg.created_at else None,
+            "wecom_res": wecom_res,
+        },
+        request_id=request.state.request_id,
+        message=f"WeChat message successfully dispatched to {len(clean_recipients)} recipient(s).",
     )
 
 

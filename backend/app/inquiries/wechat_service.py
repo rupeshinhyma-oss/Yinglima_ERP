@@ -212,6 +212,64 @@ class WeComService:
             logger.error("Failed to send WeCom RFQ message: %s", str(exc))
             return {"errcode": -1, "errmsg": str(exc)}
 
+    def send_text_message(
+        self,
+        to_users: list[str],
+        content: str,
+    ) -> dict[str, Any]:
+        """
+        Send a direct chat text message to supplier WeChat accounts via WeCom API.
+        """
+        import httpx
+
+        token = self.get_access_token()
+        url = f"https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token={token}"
+
+        resolved_users: list[str] = []
+        for u in to_users:
+            u_clean = u.strip()
+            digits = re.sub(r"\D", "", u_clean)
+            if not digits or (len(digits) < 7 and not u_clean.startswith("+")):
+                # Direct UserID (e.g. 'ChenXianNing', 'paws')
+                resolved_users.append(u_clean)
+                continue
+
+            # Try resolving phone number
+            uid = self.get_userid_by_mobile(u_clean)
+            if uid:
+                resolved_users.append(uid)
+            else:
+                resolved_users.append(u_clean)
+
+        touser_str = "|".join(resolved_users) if resolved_users else "@all"
+        payload = {
+            "touser": touser_str,
+            "msgtype": "text",
+            "agentid": self.agent_id,
+            "text": {
+                "content": content
+            },
+            "safe": 0,
+            "enable_duplicate_check": 0
+        }
+
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                resp = client.post(
+                    url,
+                    json=payload,
+                    headers={
+                        "Content-Type": "application/json; charset=utf-8",
+                        "User-Agent": "Yinglima-ERP/1.0",
+                    },
+                )
+                res = resp.json()
+                logger.info("Dispatched WeCom text message to %s: %s", touser_str, res)
+                return res
+        except Exception as exc:
+            logger.error("Failed to send WeCom text message: %s", str(exc))
+            return {"errcode": -1, "errmsg": str(exc)}
+
     # --------------------------------------------------------------------------
     # Cryptographic Handshake & Decryption per WeCom Doc 90556
     # --------------------------------------------------------------------------

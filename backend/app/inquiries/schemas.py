@@ -320,4 +320,11 @@ class SendInquiryEmailPayload(BaseModel):
     supplier_id: uuid.UUID | None = None
     attachment_url: str | None = None
     attachment_filename: str | None = None
+
+
+class SendInquiryWeChatMessagePayload(BaseModel):
+    to_wechat: list[str] = Field(..., min_length=1, description="List of recipient WeChat mobile numbers or WeCom UserIDs")
+    message: str = Field(..., min_length=1, description="Text message to dispatch to supplier via WeChat/WeCom")
+    inquiry_item_id: uuid.UUID | None = None
+    supplier_id: uuid.UUID | None = None
 

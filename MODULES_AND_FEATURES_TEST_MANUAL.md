@@ -598,6 +598,9 @@ Manage complete vendor team directory:
 - [ ] Simulate or receive an incoming WeChat reply from a supplier; verify `/api/v1/inquiries/wechat/callback` parses the reply, extracts unit price and terms via AI, and automatically creates or updates the quotation row with real-time WebSocket broadcast.
 - [ ] Switch to the **Emails** tab in Layer 3, verify the timeline displays historical RFQs and replies.
 - [ ] In the **Inline Email Composer** at the bottom of the Emails tab, select a supplier from the dropdown, type a message body, and click `✈️ Send Email`. Verify the email is dispatched via SMTP and instantly appears in the conversation thread with the `Outbound Email ↗` badge.
+- [ ] Switch to the **WeChat Messages** tab in Layer 3, verify the timeline displays all incoming and outgoing WeChat messages with timestamps and badges (`WeChat Inbound ↙` vs `Outbound WeChat ↗`).
+- [ ] In the **WeChat Direct Reply Composer** at the bottom of the WeChat tab, verify the `To:` field auto-populates with the supplier's WeChat contact (e.g. `ChenXianNing` or `13736331731`), or select a supplier from the dropdown.
+- [ ] Click a quick negotiation prompt pill (e.g. `+ Can you offer a discount for bulk quantity?`), type any additional instructions in the text area, and click `Send to WeChat 💬`. Verify the message is dispatched live to the supplier's WeCom/WeChat mobile app via Tencent API, a green success alert displays, and the reply immediately appears in the timeline with the `Outbound WeChat ↗` badge and the salesperson's name.
 - [ ] Open Public Quote Portal (`/quote/:token`) for a supplier, submit unit price `¥4500` with PDF quote sheet upload.
 - [ ] Return to Layer 3 Items view, verify Received Quotes badge updates to `1 Quote`.
 - [ ] Open Quotation Matrix Comparison modal, verify Lowest Price is highlighted in green, click `Approve Quote`, verify status turns to `Approved`.

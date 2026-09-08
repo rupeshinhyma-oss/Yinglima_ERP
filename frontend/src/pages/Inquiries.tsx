@@ -949,6 +949,13 @@ function ItemsView({
   const [composerStatus, setComposerStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [composerOpen, setComposerOpen] = useState(true);
 
+  // Inline WeChat Composer state
+  const [wechatComposerTo, setWechatComposerTo] = useState("");
+  const [wechatComposerBody, setWechatComposerBody] = useState("");
+  const [sendingWechat, setSendingWechat] = useState(false);
+  const [wechatComposerStatus, setWechatComposerStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [wechatComposerOpen, setWechatComposerOpen] = useState(true);
+
   // Modals & Drawers state
   const [addOpen, setAddOpen] = useState(false);
   const [shiftTarget, setShiftTarget] = useState<InquiryItem | null>(null);
@@ -1296,6 +1303,69 @@ function ItemsView({
       setComposerStatus({ type: "error", message: errMsg });
     } finally {
       setSendingEmail(false);
+    }
+  }
+
+  // Pre-fill WeChat composer recipient with latest WeChat sender or contact from conversation
+  useEffect(() => {
+    if (wechatComposerTo) return;
+    const wechatMsgs = inquiryMessages.filter((m: any) => m.channel === "wechat");
+    if (wechatMsgs.length > 0) {
+      // Prioritize latest inbound sender contact (e.g. ChenXianNing or phone number)
+      const latestInbound = [...wechatMsgs].reverse().find((m: any) => m.direction === "inbound" && m.sender_contact);
+      if (latestInbound && latestInbound.sender_contact) {
+        setWechatComposerTo(latestInbound.sender_contact);
+        return;
+      }
+      const latestOutbound = [...wechatMsgs].reverse().find((m: any) => m.direction === "outbound" && m.recipient_contact);
+      if (latestOutbound && latestOutbound.recipient_contact) {
+        setWechatComposerTo(latestOutbound.recipient_contact);
+        return;
+      }
+    }
+  }, [inquiryMessages, wechatComposerTo]);
+
+  async function handleSendWeChatMessage(e: React.FormEvent) {
+    e.preventDefault();
+    const cleanRecipients = wechatComposerTo
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+
+    if (cleanRecipients.length === 0) {
+      setWechatComposerStatus({ type: "error", message: "Please provide at least one valid recipient WeChat number or UserID." });
+      return;
+    }
+    if (!wechatComposerBody.trim()) {
+      setWechatComposerStatus({ type: "error", message: "Please type your message to the supplier." });
+      return;
+    }
+
+    setSendingWechat(true);
+    setWechatComposerStatus(null);
+    try {
+      const payload: any = {
+        to_wechat: cleanRecipients,
+        message: wechatComposerBody.trim(),
+        inquiry_item_id: selectedItem?.id || null,
+      };
+
+      const targetInquiryId = inquiry?.id || inquiryId;
+      const res = await apiPost<any>(`/inquiries/${targetInquiryId}/send-wechat-message`, payload);
+      const newMsgData = res.data?.data || res.data;
+
+      if (newMsgData) {
+        setInquiryMessages((prev) => [...prev, newMsgData]);
+      }
+
+      setWechatComposerBody("");
+      setWechatComposerStatus({ type: "success", message: `Message delivered to WeChat (${cleanRecipients.join(", ")}).` });
+      void loadMessages(true);
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.message || err?.response?.data?.detail || err?.message || "Failed to send WeChat message.";
+      setWechatComposerStatus({ type: "error", message: errMsg });
+    } finally {
+      setSendingWechat(false);
     }
   }
 
@@ -2089,6 +2159,18 @@ function ItemsView({
                 return false;
               };
               const wechatList = inquiryMessages.filter((m: any) => m.channel === "wechat" && isRelevantMessage(m));
+
+              // Pre-build unique WeChat suppliers list for quick dropdown
+              const uniqueSuppliersInWechat: { contact: string; name: string }[] = [];
+              const seenWechatContacts = new Set<string>();
+              for (const m of wechatList) {
+                const contact = (m.direction === "inbound" ? m.sender_contact : m.recipient_contact) || "";
+                if (contact && !seenWechatContacts.has(contact)) {
+                  seenWechatContacts.add(contact);
+                  const name = m.supplier_name || (!m.direction?.includes("outbound") && m.sender_name && m.sender_name !== "Yinglima ERP Bot" ? m.sender_name : null) || contact;
+                  uniqueSuppliersInWechat.push({ contact, name });
+                }
+              }
               return (
                 <div style={{ display: "flex", flexDirection: "column", gap: "16px", flex: 1 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px", background: "#f0fdf4", padding: "12px 16px", borderRadius: "8px", border: "1px solid #bbf7d0" }}>
@@ -2268,6 +2350,194 @@ function ItemsView({
                       })}
                     </div>
                   )}
+
+                  {/* Interactive WeChat Inline Composer */}
+                  <div
+                    style={{
+                      background: "#ffffff",
+                      border: "1.5px solid #86efac",
+                      borderRadius: "12px",
+                      boxShadow: "0 4px 12px rgba(22, 163, 74, 0.06)",
+                      overflow: "hidden",
+                      marginTop: "14px",
+                    }}
+                  >
+                    {/* Composer Header Bar */}
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "10px 16px",
+                        background: "#f0fdf4",
+                        borderBottom: "1px solid #bbf7d0",
+                        cursor: "pointer",
+                      }}
+                      onClick={() => setWechatComposerOpen((v) => !v)}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", fontWeight: 700, color: "#166534" }}>
+                        <span>💬</span>
+                        <span>Send Direct WeChat / Reply to Supplier</span>
+                      </div>
+                      <div style={{ fontSize: "12px", color: "#15803d", fontWeight: 600 }}>
+                        {wechatComposerOpen ? "▲ Minimize" : "▼ Open Composer"}
+                      </div>
+                    </div>
+
+                    {wechatComposerOpen && (
+                      <form onSubmit={handleSendWeChatMessage} style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                        {wechatComposerStatus && (
+                          <div
+                            style={{
+                              padding: "8px 12px",
+                              borderRadius: "6px",
+                              fontSize: "12.5px",
+                              fontWeight: 600,
+                              background: wechatComposerStatus.type === "success" ? "#dcfce7" : "#fee2e2",
+                              color: wechatComposerStatus.type === "success" ? "#166534" : "#991b1b",
+                              border: `1px solid ${wechatComposerStatus.type === "success" ? "#bbf7d0" : "#fecaca"}`,
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                            }}
+                          >
+                            <span>{wechatComposerStatus.type === "success" ? "✓ " : "⚠️ "}{wechatComposerStatus.message}</span>
+                            <button type="button" onClick={() => setWechatComposerStatus(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", fontWeight: 700 }}>✕</button>
+                          </div>
+                        )}
+
+                        {/* Recipient Field (To:) */}
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px", borderBottom: "1px solid #f1f5f9", paddingBottom: "8px" }}>
+                          <span style={{ fontSize: "12.5px", fontWeight: 700, color: "#64748b", width: "40px" }}>To:</span>
+                          <div style={{ flex: 1, display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+                            <input
+                              type="text"
+                              placeholder="WeChat Mobile (e.g. 13736331731) or UserID (e.g. ChenXianNing)"
+                              value={wechatComposerTo}
+                              onChange={(e) => setWechatComposerTo(e.target.value)}
+                              required
+                              style={{
+                                flex: 1,
+                                minWidth: "220px",
+                                padding: "6px 10px",
+                                border: "1px solid #86efac",
+                                borderRadius: "6px",
+                                fontSize: "13px",
+                              }}
+                            />
+                            {/* Quick Supplier Picker if known WeChat contacts exist */}
+                            {uniqueSuppliersInWechat.length > 0 && (
+                              <select
+                                onChange={(e) => {
+                                  if (e.target.value) {
+                                    setWechatComposerTo(e.target.value);
+                                  }
+                                }}
+                                style={{
+                                  padding: "6px 10px",
+                                  border: "1px solid #86efac",
+                                  borderRadius: "6px",
+                                  fontSize: "12px",
+                                  color: "#166534",
+                                  background: "#f0fdf4",
+                                  cursor: "pointer",
+                                  fontWeight: 600,
+                                }}
+                                defaultValue=""
+                              >
+                                <option value="" disabled>-- Pick Chatted Supplier --</option>
+                                {uniqueSuppliersInWechat.map((s, idx) => (
+                                  <option key={idx} value={s.contact}>
+                                    {s.name} ({s.contact})
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Quick Reply / Prompt Pills */}
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                          <span style={{ fontSize: "11px", fontWeight: 600, color: "#64748b" }}>Quick Prompts:</span>
+                          {[
+                            "Can you offer a discount for bulk quantity? / 请问大批量是否有折扣？",
+                            "Please confirm the earliest delivery lead time. / 请确认最快交期。",
+                            "Please confirm shipping terms and packing dimensions. / 请确认价格条款和包装尺寸。",
+                            "Could you send the official Proforma Invoice (PI)? / 请提供正式形式发票(PI)。",
+                          ].map((promptText, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => setWechatComposerBody((prev) => (prev ? `${prev}\n${promptText}` : promptText))}
+                              style={{
+                                padding: "2px 8px",
+                                background: "#f0fdf4",
+                                border: "1px solid #bbf7d0",
+                                borderRadius: "12px",
+                                fontSize: "11px",
+                                color: "#166534",
+                                cursor: "pointer",
+                                transition: "all 0.1s ease",
+                              }}
+                            >
+                              + {promptText.split("/")[0].trim()}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Message Body Field */}
+                        <div>
+                          <textarea
+                            placeholder="Type your message or negotiation reply to the supplier on WeChat (supports Chinese and English)..."
+                            rows={3}
+                            value={wechatComposerBody}
+                            onChange={(e) => setWechatComposerBody(e.target.value)}
+                            required
+                            style={{
+                              width: "100%",
+                              padding: "10px 12px",
+                              border: "1px solid #86efac",
+                              borderRadius: "8px",
+                              fontSize: "13px",
+                              lineHeight: 1.5,
+                              resize: "vertical",
+                              fontFamily: "inherit",
+                              color: "#0f172a",
+                            }}
+                          />
+                        </div>
+
+                        {/* Footer & Send Action */}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div style={{ fontSize: "11.5px", color: "#64748b" }}>
+                            ⚡ Messages are dispatched live to supplier WeChat / WeCom app via Tencent API.
+                          </div>
+                          <button
+                            type="submit"
+                            disabled={sendingWechat}
+                            style={{
+                              padding: "8px 20px",
+                              background: "#16a34a",
+                              color: "#ffffff",
+                              border: "none",
+                              borderRadius: "6px",
+                              fontSize: "13px",
+                              fontWeight: 700,
+                              cursor: sendingWechat ? "not-allowed" : "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "6px",
+                              boxShadow: "0 1px 3px rgba(22, 163, 74, 0.3)",
+                              opacity: sendingWechat ? 0.7 : 1,
+                            }}
+                          >
+                            <span>{sendingWechat ? "⏳" : "💬"}</span>
+                            <span>{sendingWechat ? "Sending..." : "Send to WeChat"}</span>
+                          </button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
                 </div>
               );
             })()
