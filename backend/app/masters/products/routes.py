@@ -203,14 +203,14 @@ async def upload_product_image(
     _current_user: CurrentUser = Depends(require_permission("product.create")),
 ) -> dict:
     """
-    Upload a product image to Supabase Storage (bucket 'product-images'),
-    falling back to local disk (uploads/products/) if Supabase is unavailable.
+    Upload a product image to Cloud Storage (bucket 'yinglima-product-images'),
+    falling back to local disk (uploads/products/) if cloud storage is unavailable.
     """
     content = await file.read()
     image_url, _ = await save_uploaded_file(
         content=content,
         original_filename=file.filename or "product_image.jpg",
-        bucket="product-images",
+        bucket="yinglima-product-images",
         local_subfolder="products",
         content_type=file.content_type,
     )

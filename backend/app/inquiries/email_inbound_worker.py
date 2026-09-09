@@ -214,12 +214,12 @@ class EmailInboundWorker:
         if msg.is_multipart():
             for part in msg.walk():
                 content_type = part.get_content_type()
-                content_disp = str(part.get("Content-Disposition", ""))
+                content_disp = part.get("Content-Disposition") or ""
 
                 if "attachment" in content_disp or content_type in ["application/pdf", "image/png", "image/jpeg"]:
                     filename = clean_decode_header(part.get_filename() or "attachment")
                     payload_bytes = part.get_payload(decode=True)
-                    if payload_bytes:
+                    if payload_bytes and isinstance(payload_bytes, bytes):
                         attachments.append({
                             "filename": filename,
                             "content_type": content_type,
@@ -229,7 +229,10 @@ class EmailInboundWorker:
                     payload_bytes = part.get_payload(decode=True)
                     if payload_bytes:
                         try:
-                            text = payload_bytes.decode(part.get_content_charset() or "utf-8", errors="replace")
+                            if isinstance(payload_bytes, bytes):
+                                text = payload_bytes.decode(part.get_content_charset() or "utf-8", errors="replace")
+                            else:
+                                text = str(payload_bytes)
                             plain_text_parts.append(text)
                         except Exception:
                             pass
@@ -237,14 +240,20 @@ class EmailInboundWorker:
                     payload_bytes = part.get_payload(decode=True)
                     if payload_bytes:
                         try:
-                            text = payload_bytes.decode(part.get_content_charset() or "utf-8", errors="replace")
+                            if isinstance(payload_bytes, bytes):
+                                text = payload_bytes.decode(part.get_content_charset() or "utf-8", errors="replace")
+                            else:
+                                text = str(payload_bytes)
                             html_text_parts.append(text)
                         except Exception:
                             pass
         else:
             payload_bytes = msg.get_payload(decode=True)
             if payload_bytes:
-                text = payload_bytes.decode(msg.get_content_charset() or "utf-8", errors="replace")
+                if isinstance(payload_bytes, bytes):
+                    text = payload_bytes.decode(msg.get_content_charset() or "utf-8", errors="replace")
+                else:
+                    text = str(payload_bytes)
                 if msg.get_content_type() == "text/html":
                     html_text_parts.append(text)
                 else:
@@ -384,7 +393,7 @@ class EmailInboundWorker:
                 all_codes_res = await session.execute(
                     select(ConsignmentCode).where(ConsignmentCode.deleted_at.is_(None))
                 )
-                all_codes = all_codes_res.scalars().all()
+                all_codes = list(all_codes_res.scalars().all())
                 # Sort codes by length descending so longer codes match first
                 all_codes.sort(key=lambda c: len(c.code or ""), reverse=True)
                 for cc in all_codes:
@@ -713,7 +722,7 @@ class EmailInboundWorker:
                     att_url, _ = await save_uploaded_file(
                         content=first_att["bytes"],
                         original_filename=raw_fname,
-                        bucket="quotations",
+                        bucket="yinglima-quotations",
                         local_subfolder="quotations",
                     )
                     saved_attachment_url = att_url
@@ -746,7 +755,7 @@ class EmailInboundWorker:
                     "remarks": ai_result.remarks,
                 }]
 
-            created_quotes_count = 0
+            created_quotes: list[Quotation] = []
             for q_obj in quotes_to_process:
                 q_dict = q_obj if isinstance(q_obj, dict) else q_obj.model_dump()
                 unit_p = q_dict.get("unit_price")
@@ -755,8 +764,9 @@ class EmailInboundWorker:
 
                 # Match exact product line item from this consignment if specified
                 q_item_id = resolved_item_id
-                q_pcode = re.sub(r"[^a-z0-9]", "", (q_dict.get("product_code") or "").lower())
-                q_pname = (q_dict.get("product_name") or "").lower().strip()
+                raw_pcode = str(q_dict.get("product_code") or "").lower()
+                q_pcode = re.sub(r"[^a-z0-9]", "", raw_pcode)
+                q_pname = str(q_dict.get("product_name") or "").lower().strip()
                 for c_item, c_prod in consignment_items:
                     cp_code = re.sub(r"[^a-z0-9]", "", (c_prod.product_code or "").lower())
                     cp_name = (c_prod.product_name or c_prod.product_name_tally or "").lower().strip()
@@ -776,9 +786,9 @@ class EmailInboundWorker:
                 if existing_check.scalars().first():
                     continue
 
-                quoted_qty = q_dict.get("quantity") or float(target_matched_item.quantity or 1.0)
+                quoted_qty = float(q_dict.get("quantity") or target_matched_item.quantity or 1.0)
                 quoted_unit_price = float(unit_p)
-                quote_currency = q_dict.get("currency") or ai_result.currency or "CNY"
+                quote_currency = str(q_dict.get("currency") or ai_result.currency or "CNY")
                 total_cost = round(quoted_qty * quoted_unit_price, 2)
 
                 quote_count_res = await session.execute(
@@ -791,24 +801,23 @@ class EmailInboundWorker:
                 quote_number = f"QT-AUTO-{existing_count + 1:02d}"
 
                 t_parts: list[str] = []
-                if q_dict.get("price_terms"):
-                    t_parts.append(q_dict["price_terms"])
-                elif ai_result.price_terms:
-                    t_parts.append(ai_result.price_terms)
-                if q_dict.get("payment_terms"):
-                    t_parts.append(q_dict["payment_terms"])
-                elif ai_result.payment_terms:
-                    t_parts.append(ai_result.payment_terms)
+                p_terms = q_dict.get("price_terms") or ai_result.price_terms
+                if p_terms:
+                    t_parts.append(str(p_terms))
+                pay_terms = q_dict.get("payment_terms") or ai_result.payment_terms
+                if pay_terms:
+                    t_parts.append(str(pay_terms))
                 terms_combined = " • ".join(t_parts) if t_parts else None
 
-                q_rem = q_dict.get("remarks") or ai_result.remarks or ""
-                dedup_remark = f"{q_rem + ' | ' if q_rem else ''}Auto-extracted from {sender_email} [msg:{msg_id[:30]}]"
+                q_rem = str(q_dict.get("remarks") or ai_result.remarks or "")
+                dedup_prefix = f"{q_rem} | " if q_rem else ""
+                dedup_remark = f"{dedup_prefix}Auto-extracted from {sender_email} [msg:{msg_id[:30]}]"
 
                 exp_date = None
                 date_val = q_dict.get("earliest_available_date") or ai_result.earliest_available_date
                 if date_val:
                     try:
-                        exp_date = datetime.strptime(date_val, "%Y-%m-%d").date()
+                        exp_date = datetime.strptime(str(date_val).strip(), "%Y-%m-%d").date()
                     except Exception:
                         pass
 
@@ -830,16 +839,17 @@ class EmailInboundWorker:
                     created_by=creator_user_id,
                 )
                 session.add(quotation)
-                created_quotes_count += 1
+                created_quotes.append(quotation)
 
-            if created_quotes_count > 0:
+            if created_quotes:
                 await session.commit()
                 logger.info(
                     "Auto-created %d quotation record(s) for supplier %s on consignment %s.",
-                    created_quotes_count,
+                    len(created_quotes),
                     quote_supplier_id,
                     matched_inquiry_id,
                 )
+                last_quote = created_quotes[-1]
                 await self._dispatcher.publish(
                     module_channel("inquiries"),
                     Event(
@@ -847,17 +857,23 @@ class EmailInboundWorker:
                         entity_id=str(resolved_item_id),
                         event_type="quotation.created",
                         changes={
-                            "id": str(quotation.id),
+                            "id": str(last_quote.id),
                             "inquiry_item_id": str(resolved_item_id),
                             "inquiry_id": str(matched_inquiry_id),
-                            "quote_number": quote_number,
-                            "unit_price": quoted_unit_price,
-                            "currency": quote_currency,
+                            "quote_number": last_quote.quote_number,
+                            "unit_price": last_quote.unit_price,
+                            "currency": last_quote.currency,
                             "status": "pending",
                         },
                     ),
                 )
-                logger.info("Created quotation %s (%s %s) for item %s", quote_number, quoted_unit_price, quote_currency, resolved_item_id)
+                logger.info(
+                    "Created quotation %s (%s %s) for item %s",
+                    last_quote.quote_number,
+                    last_quote.unit_price,
+                    last_quote.currency,
+                    resolved_item_id,
+                )
 
         if msg_id:
             self._save_seen_id(msg_id)

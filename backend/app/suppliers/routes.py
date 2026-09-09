@@ -310,14 +310,14 @@ async def upload_supplier_media(
     _current_user: CurrentUser = Depends(require_permission("supplier.create")),
 ) -> dict:
     """
-    Upload a supplier visit photo/video to Supabase Storage (bucket 'supplier-media'),
-    falling back to local disk (uploads/suppliers/) if Supabase is unavailable.
+    Upload a supplier visit photo/video to Cloud Storage (bucket 'yinglima-supplier-media'),
+    falling back to local disk (uploads/suppliers/) if cloud storage is unavailable.
     """
     content = await file.read()
     media_url, _ = await save_uploaded_file(
         content=content,
         original_filename=file.filename or "supplier_media.jpg",
-        bucket="supplier-media",
+        bucket="yinglima-supplier-media",
         local_subfolder="suppliers",
         content_type=file.content_type,
     )

@@ -9,8 +9,7 @@ Handles:
    are absent or unreachable.
 """
 
-from __future__ import annotations
-
+import asyncio
 import mimetypes
 import os
 import re
@@ -18,6 +17,8 @@ import uuid
 from pathlib import Path
 from typing import Tuple
 
+import boto3
+from botocore.client import Config
 import httpx
 
 from app.core.config import settings
@@ -27,6 +28,30 @@ logger = get_logger(__name__)
 
 # Cache to avoid repeatedly hitting bucket check API
 _VERIFIED_BUCKETS: set[str] = set()
+_S3_CLIENT = None
+
+
+def get_neon_s3_client():
+    """Return a cached boto3 S3 client configured for Neon S3 Object Storage."""
+    global _S3_CLIENT
+    if _S3_CLIENT is not None:
+        return _S3_CLIENT
+    if not (settings.AWS_ENDPOINT_URL_S3 and settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY):
+        return None
+    try:
+        _S3_CLIENT = boto3.client(
+            "s3",
+            endpoint_url=settings.AWS_ENDPOINT_URL_S3,
+            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+            region_name=settings.AWS_REGION,
+            config=Config(s3={"addressing_style": "path"}),
+        )
+        return _S3_CLIENT
+    except Exception as exc:
+        logger.warning("Failed to initialize Neon S3 client: %s", exc)
+        return None
+
 
 
 def sanitize_filename(filename: str) -> str:
@@ -190,15 +215,64 @@ async def upload_to_supabase(
     return None
 
 
+def _sync_s3_upload(client, bucket: str, filename: str, content: bytes, content_type: str) -> None:
+    client.put_object(
+        Bucket=bucket,
+        Key=filename,
+        Body=content,
+        ContentType=content_type,
+    )
+
+
+NEON_BUCKET_MAP: dict[str, str] = {
+    "product-images": "yinglima-product-images",
+    "supplier-media": "yinglima-supplier-media",
+    "quotations": "yinglima-quotations",
+    "products": "yinglima-product-images",
+    "suppliers": "yinglima-supplier-media",
+}
+
+
+async def upload_to_neon_s3(
+    bucket: str,
+    filename: str,
+    content: bytes,
+    content_type: str | None = None,
+) -> str | None:
+    """
+    Upload a file directly to Neon S3-compatible Object Storage.
+
+    Returns the public URL on success, or None if failed or Neon S3 is not configured.
+    """
+    client = get_neon_s3_client()
+    if not client or not settings.AWS_ENDPOINT_URL_S3:
+        return None
+
+    target_bucket = NEON_BUCKET_MAP.get(bucket, bucket)
+
+    if not content_type:
+        content_type = guess_content_type(filename)
+
+    try:
+        await asyncio.to_thread(_sync_s3_upload, client, target_bucket, filename, content, content_type)
+        endpoint = settings.AWS_ENDPOINT_URL_S3.rstrip("/")
+        public_url = f"{endpoint}/{target_bucket}/{filename}"
+        logger.info("Successfully uploaded file to Neon S3 storage: %s", public_url)
+        return public_url
+    except Exception as exc:
+        logger.warning("Neon S3 upload error for %s/%s: %s", target_bucket, filename, exc)
+        return None
+
+
 async def save_uploaded_file(
     content: bytes,
     original_filename: str,
-    bucket: str = "product-images",
+    bucket: str = "yinglima-product-images",
     local_subfolder: str = "products",
     content_type: str | None = None,
 ) -> Tuple[str, str]:
     """
-    Save an uploaded file, attempting Supabase Storage first, falling back to local disk.
+    Save an uploaded file, attempting Neon S3 first, then Supabase Storage, falling back to local disk.
 
     Returns:
         tuple[public_url, stored_filename]
@@ -207,7 +281,7 @@ async def save_uploaded_file(
     unique_filename = f"{uuid.uuid4().hex}_{clean_name}"
     mime = content_type or guess_content_type(clean_name)
 
-    # 1. Try Supabase Storage
+    # 1. Try Supabase Storage (primary cloud storage)
     supabase_url = await upload_to_supabase(
         bucket=bucket,
         filename=unique_filename,
@@ -216,6 +290,16 @@ async def save_uploaded_file(
     )
     if supabase_url:
         return supabase_url, unique_filename
+
+    # 2. Try S3 Storage (secondary cloud fallback if configured)
+    neon_url = await upload_to_neon_s3(
+        bucket=bucket,
+        filename=unique_filename,
+        content=content,
+        content_type=mime,
+    )
+    if neon_url:
+        return neon_url, unique_filename
 
     # 2. Fallback to local disk
     local_dir = Path("uploads") / local_subfolder

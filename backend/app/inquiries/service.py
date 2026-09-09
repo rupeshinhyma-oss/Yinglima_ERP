@@ -393,6 +393,129 @@ class InquiryService:
         await self._refresh_rollup(inquiry.id)
         return created_items
 
+    async def import_items(
+        self,
+        inquiry_id: uuid.UUID,
+        filename: str,
+        raw_bytes: bytes,
+        user_id: uuid.UUID,
+    ) -> Any:
+        """
+        Validate and import product line items from an uploaded CSV/XLSX file into a consignment.
+
+        Matches each row's product by Product Code or Product Name against Product Master,
+        copies UOM and license flags automatically, and updates consignment rollups.
+        """
+        from app.masters.import_export import parse_rows_from_file, ImportSummary
+
+        inquiry = await self.get_inquiry_or_raise(inquiry_id)
+        rows = parse_rows_from_file(filename, raw_bytes)
+
+        # Pre-fetch all active products for fast lookup
+        all_products = await self.product_repository.list(limit=None)
+        product_by_code = {p.product_code.strip().lower(): p for p in all_products if p.product_code}
+        product_by_name = {p.product_name.strip().lower(): p for p in all_products if p.product_name}
+        product_by_tally = {
+            getattr(p, "product_name_tally", "").strip().lower(): p
+            for p in all_products
+            if getattr(p, "product_name_tally", None)
+        }
+
+        summary = ImportSummary(total_rows=len(rows))
+        now = _utcnow()
+
+        for idx, row in enumerate(rows):
+            row_num = idx + 2  # Excel row 2 is first data row after header
+
+            # Extract fields with flexible key names (human-readable or snake_case)
+            def _val(*keys: str) -> str:
+                for k in keys:
+                    v = row.get(k)
+                    if v is not None:
+                        s = f"{v}".strip()
+                        if s:
+                            return s
+                return ""
+
+            raw_code = _val("Product Code", "product_code", "SKU", "Item Code", "item_code")
+            raw_name = _val("Product Name", "product_name", "Item Name", "item_name", "Title")
+            raw_qty = _val("Quantity", "quantity", "Qty", "qty")
+            brand_pref = _val("Brand Preference", "brand_preference", "Brand", "brand") or None
+            specs_remarks = _val("Product Specs / Remarks", "product_specs_remarks", "Remarks", "remarks", "Specifications") or None
+            raw_status = _val("Status", "status").lower()
+
+            # 1. Resolve Product
+            product = None
+            if raw_code and raw_code.lower() in product_by_code:
+                product = product_by_code[raw_code.lower()]
+            elif raw_name and raw_name.lower() in product_by_name:
+                product = product_by_name[raw_name.lower()]
+            elif raw_name and raw_name.lower() in product_by_tally:
+                product = product_by_tally[raw_name.lower()]
+
+            if not product:
+                search_term = raw_name or raw_code or "Unknown"
+                summary.failed += 1
+                summary.errors.append({
+                    "row": row_num,
+                    "error": f"Product '{search_term}' not found in Product Master. Please ensure product exists.",
+                    "row_data": row,
+                })
+                continue
+
+            # 2. Validate Quantity
+            try:
+                clean_qty = raw_qty.replace(",", "")
+                qty = float(clean_qty)
+                if qty <= 0:
+                    raise ValueError("Quantity must be greater than zero.")
+            except (ValueError, TypeError):
+                summary.failed += 1
+                summary.errors.append({
+                    "row": row_num,
+                    "error": f"Invalid quantity '{raw_qty}'. Must be a positive number.",
+                    "row_data": row,
+                })
+                continue
+
+            # 3. Determine Status
+            st = (
+                InquiryItemStatus.APPROVED
+                if raw_status in ("approved", "yes", "true", "1")
+                else InquiryItemStatus.PROPOSED
+            )
+
+            # 4. Create InquiryItem
+            try:
+                await self.item_repository.create(
+                    inquiry_id=inquiry.id,
+                    product_id=product.id,
+                    uom_id=product.uom_id,
+                    quantity=qty,
+                    brand_preference=brand_pref,
+                    product_specs_remarks=specs_remarks,
+                    status=st,
+                    proposed_at=now,
+                    proposed_by=user_id,
+                    approved_at=now if st == InquiryItemStatus.APPROVED else None,
+                    approved_by=user_id if st == InquiryItemStatus.APPROVED else None,
+                    tally_entry_posted=False,
+                    requires_license=bool(getattr(product, "license_certificate_required", None)),
+                )
+                summary.created += 1
+            except Exception as ex:
+                summary.failed += 1
+                summary.errors.append({
+                    "row": row_num,
+                    "error": f"Failed to save item: {ex}",
+                    "row_data": row,
+                })
+
+        if summary.created > 0:
+            await self._refresh_rollup(inquiry.id)
+
+        return summary
+
     async def update_item(self, inquiry_id: uuid.UUID, item_id: uuid.UUID, **field_values: Any) -> InquiryItem:
         """
         Update an inquiry item's editable fields.

@@ -21,6 +21,7 @@ actually changes), not the consignment level.
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import datetime
 
@@ -48,7 +49,7 @@ from app.inquiries.ai_extractor import extract_supplier_quotation
 from app.inquiries.dependencies import get_inquiry_service
 from app.inquiries.public_quotes import generate_rfq_token
 from app.masters.products.models import Product
-from app.suppliers.models import Supplier, SupplierCategoryLink, SupplierSubCategoryLink
+from app.suppliers.models import Supplier, SupplierContact, SupplierCategoryLink, SupplierSubCategoryLink
 from app.inquiries.schemas import (
     BulkRFQCreate,
     BulkTallyPostRequest,
@@ -437,6 +438,69 @@ async def export_consignment(
         content=content,
         media_type=media_type,
         headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.post("/{inquiry_id}/items/import", summary="Import inquiry line items from CSV/Excel")
+async def import_inquiry_items(
+    inquiry_id: uuid.UUID,
+    request: Request,
+    file: UploadFile = File(...),
+    service: InquiryService = Depends(get_inquiry_service),
+    current_user: CurrentUser = Depends(get_current_user),
+    audit_service: AuditService = Depends(get_audit_service),
+    db: AsyncSession = Depends(get_db_session),
+    dispatcher: EventDispatcher = Depends(get_event_dispatcher),
+) -> dict:
+    """
+    Import multiple product items into an inquiry consignment from an uploaded CSV or XLSX file.
+
+    Validates every row against the Product Master by Product Code or Product Name.
+    Assigns UOM automatically and flags any products requiring licenses.
+    """
+    raw_bytes = await file.read()
+    summary = await service.import_items(
+        inquiry_id=inquiry_id,
+        filename=file.filename or "import.csv",
+        raw_bytes=raw_bytes,
+        user_id=current_user.id,
+    )
+    await _record_action(
+        audit_service=audit_service,
+        request=request,
+        action=AuditAction.IMPORT,
+        actor=current_user,
+        entity_id=inquiry_id,
+        description=f"Imported inquiry items: {summary.created} created, {summary.failed} failed.",
+        new_values=summary.as_dict(),
+    )
+    await _publish_inquiry_event(
+        db=db,
+        dispatcher=dispatcher,
+        event_type="inquiry.updated",
+        entity_id=inquiry_id,
+        user_id=current_user.id,
+        changes={"imported_created": summary.created, "imported_failed": summary.failed},
+    )
+    return build_success_response(
+        data=summary.as_dict(),
+        request_id=request.state.request_id,
+        message=f"Imported {summary.created} item(s)." if summary.created else "Import completed.",
+    )
+
+
+@router.get("/sample-template", summary="Download inquiry product items CSV template")
+async def download_sample_template() -> Response:
+    """Download standard CSV template for importing inquiry product items."""
+    content = (
+        "Product Name,Product Code,Quantity,UOM,Brand Preference,Product Specs / Remarks,Status\r\n"
+        "FR900 Continuous Band Sealer,PC10956df,10,Sets,Yinglima,220V 50Hz with Teflon belts,Proposed\r\n"
+        "Ink Cup Set 90mm,,25,PCS,Brother,Ceramic ring standard cup,Proposed\r\n"
+    )
+    return Response(
+        content=content.encode("utf-8"),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="Sample_Inquiry_Items_Template.csv"'},
     )
 
 
@@ -1853,11 +1917,12 @@ async def send_inquiry_wechat_message(
             if digits:
                 s_res = await db.execute(
                     select(Supplier.id)
+                    .outerjoin(SupplierContact, SupplierContact.supplier_id == Supplier.id)
                     .where(
-                        (Supplier.contact_wechat_number.contains(digits)) |
-                        (Supplier.wechat_number.contains(digits)) |
-                        (Supplier.contact_calling_number.contains(digits)) |
-                        (Supplier.phone.contains(digits))
+                        (Supplier.contact_wechat_number.contains(digits))
+                        | (Supplier.contact_calling_number.contains(digits))
+                        | (SupplierContact.wechat_number.contains(digits))
+                        | (SupplierContact.calling_number.contains(digits))
                     )
                     .limit(1)
                 )

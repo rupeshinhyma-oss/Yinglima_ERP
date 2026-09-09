@@ -211,7 +211,7 @@ Multi-tab comprehensive modal for vendor master lifecycle.
 - **Factory / Office Visit Record**:
   - **Visited Factory / Office**: Radio/Select `Yes` / `No`.
   - **Visit Remarks**: Notes from physical plant inspection.
-  - **Visit Photos / Media Upload**: Multi-file uploader supporting **Supabase Cloud Storage** (`supplier-media` bucket) with transparent local disk fallback (`uploads/suppliers/`) served statically by FastAPI (`/uploads/suppliers/`), complete with preview thumbnails and delete action.
+  - **Visit Photos / Media Upload**: Multi-file uploader supporting **Neon S3 Object Storage** (`supplier-media` bucket) with transparent Supabase and local disk fallback (`uploads/suppliers/`) served statically by FastAPI (`/uploads/suppliers/`), complete with preview thumbnails and delete action.
   - **Visit Video URL**: Link to factory inspection video (YouTube, Youku, Cloud Storage).
 - **Overall Remarks**: General procurement notes.
 
@@ -367,7 +367,7 @@ Manage complete vendor team directory:
 - **Dynamic Technical Specifications Builder:**
   - Key-Value attribute table (e.g. `Voltage: 380V`, `Power: 4.5kW`, `Speed: 120 pcs/min`).
 - **Cloud Media & Photo Upload:**
-  - Multi-image uploader supporting **Supabase Storage** (`product-images` bucket) with automatic local filesystem fallback (`uploads/products/`) served statically by FastAPI (`/uploads/products/`), ensuring zero broken images even in air-gapped or non-Supabase deployments.
+  - Multi-image uploader supporting **Neon S3 Object Storage** (`product-images` bucket) with automatic Supabase and local filesystem fallback (`uploads/products/`) served statically by FastAPI (`/uploads/products/`), ensuring zero broken images even in air-gapped deployments.
 
 ### Test Cases
 - [ ] Create a product, enter Length: `100`, Width: `50`, Height: `40`. Verify CBM calculates to `0.200000`.
@@ -521,17 +521,30 @@ Manage complete vendor team directory:
 - **Toolbar Actions:**
   - ➕ **`+ Add Line Item` Button & Modal:**
     - Product picker (loads SKU, image, category), Quantity, Primary UOM, Target Price, Brand Preference, Remarks.
-  - 📥 **`Export` Button & Format Dropdown Menu (Option 1):**
-    - **UI Placement**: Top-right header action bar beside `← Back` and `+ Add Item`.
-    - **Interactive Format Dropdown**:
-      - 🟢 **XLSX (Excel Spreadsheet)**: Generates a styled `.xlsx` workbook via openpyxl with sheet title named after consignment code (e.g. `FB1 Items`).
-      - 🔵 **CSV (CSV Delimited)**: Standard UTF-8 with BOM (`utf-8-sig`) compatible with Microsoft Excel, LibreOffice Calc, and Google Sheets.
-    - **Exported Columns**: `Sr No`, `Consignment Code`, `Buyer Company`, `Product Code`, `Product Name`, `Quantity`, `UOM`, `Brand Preference`, `Product Specs / Remarks`, `License Required`, `Item Status`, `Tally Entry Posted`, `Quotation Count`, `Best Quote Price`, `Best Quote Currency`, `Selected Supplier`, `Procurement Remarks`.
-    - **Dynamic Quotation Enrichment**: For each line item, the export resolves the approved quotation bid or the lowest received supplier unit price, including currency and supplier company name.
-    - **State Handling**:
-      - **Disabled State**: Button disabled (`opacity: 0.6`, `cursor: not-allowed`) with tooltip `"No items to export"` when `items.length === 0`.
-      - **Loading State**: Displays `"Exporting..."` with spinner while fetching binary blob.
-    - **File Naming Standard**: `Inquiry_{ConsignmentCode}_{YYYY-MM-DD}.{format}` (e.g. `Inquiry_FB1_2026-09-08.xlsx`).
+  - ➕ **`+ Add Line Item` Button & Modal:**
+    - Product picker (loads SKU, image, category), Quantity, Primary UOM, Target Price, Brand Preference, Remarks.
+  - 🔄 **`Imp / Exp ▾` Button & Dropdown Menu (Unified Import/Export):**
+    - **UI Placement**: Top-right action bar in Layer 3 beside `← Back` and `+ Add Item`.
+    - **Dropdown Options**:
+      - 📄 **SAMPLE FILE**: Downloads standardized sample CSV (`Sample_Inquiry_Items_Template.csv`) pre-populated with realistic machine/spare part data.
+      - 📥 **IMPORT**: Navigates to the dedicated `Import Inquiry Products` full-page interface.
+      - 📤 **EXPORT**: Exports all consignment line items to Excel (`.xlsx`) with enriched quotation metrics, UOM, and statuses.
+  - 📥 **`Import Inquiry Products` Dedicated Page & Column Mapping Wizard:**
+    - **Page Layout**:
+      - Breadcrumb: `Inquiries > {Buyer Name} > #{Consignment Code} > Import Products`.
+      - Header with `← BACK` navigation button.
+      - Drag-and-drop file selector supporting `.csv`, `.xlsx`, and `.xls` (Max 8 MB, up to 5,000 rows).
+      - `📥 Download Sample CSV Template` button.
+      - **Validation Guidelines & Notes Card**: Explains mandatory fields (`Product Name` or `Product Code`, `Quantity`), positive quantity requirement, auto-assigned UOM from Product Master, automated license flagging in red, and status defaulting to `Proposed`.
+      - Action buttons: `Cancel` and `Import`.
+    - **Interactive Column Mapping Modal (`WizardModal`)**:
+      - Client-side pre-parsing via SheetJS / PapaParse.
+      - Dynamic synonyms matching (e.g. `Item Name` $\rightarrow$ `Product Name`, `Qty` $\rightarrow$ `Quantity`, `SKU` $\rightarrow$ `Product Code`) with green `MATCHED` badges.
+      - First 5 rows live preview table for visual verification.
+      - Progressive chunked upload to `POST /api/v1/inquiries/{inquiry_id}/items/import`.
+    - **Results Summary Panel**:
+      - Displays total rows, created count, failed count, and row-by-row error diagnostics with exact spreadsheet row numbers.
+      - Automatically recomputes consignment rollups (Total CBM, Weight, Status) and updates the workspace in real-time.
   - ⚡ **`+ Bulk Add Items` Button & Modal:**
     - Multi-row product picker from Product Master with live search. Check multiple products and enter quantities simultaneously.
   - 📤 **`Dispatch Bulk RFQs` Button & Modal:**

@@ -11,7 +11,7 @@
  * continuous drill-down rather than distinct pages.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AppShell } from "@/components/AppShell";
 import { Banner, Can, TableMessageRow } from "@/components/ui";
@@ -21,8 +21,28 @@ import { apiDelete, apiGet, apiPatch, apiPost, downloadExport, toQueryString } f
 import { useLiveModule } from "@/lib/live/useLive";
 import { useAuth, usePendingGuard } from "@/lib/hooks";
 import { autoTitleCase } from "@/utils/text";
+import {
+  ImpExpDropdown,
+  ImportSummaryPanel,
+  downloadSampleCsv,
+  parseFile,
+  WizardModal,
+  type ImportHeader,
+  type ImportSummary,
+  type SheetRow,
+} from "@/components/ImportWizard";
 import type { Buyer } from "@/types/buyers";
 import type { CompanySummary, ConsignmentCode, Inquiry, InquiryItem, InquiryListItem, Quotation } from "@/types/inquiries";
+
+const INQUIRY_ITEM_IMPORT_HEADERS: ImportHeader[] = [
+  { key: "Product Name", label: "Product Name", required: true },
+  { key: "Product Code", label: "Product Code" },
+  { key: "Quantity", label: "Quantity", required: true },
+  { key: "UOM", label: "UOM" },
+  { key: "Brand Preference", label: "Brand Preference" },
+  { key: "Product Specs / Remarks", label: "Product Specs / Remarks" },
+  { key: "Status", label: "Status" },
+];
 
 type View =
   | { layer: "companies" }
@@ -968,8 +988,42 @@ function ItemsView({
   const [productInfoTarget, setProductInfoTarget] = useState<InquiryItem | null>(null);
   const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null);
   const [editQtyItem, setEditQtyItem] = useState<{ id: string; qty: number } | null>(null);
-  const [exporting, setExporting] = useState(false);
-  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+
+  // Import state variables (modeled on Supplier Import)
+  const [isImportPageOpen, setIsImportPageOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
+  const [wizardPending, setWizardPending] = useState<{
+    file: File;
+    rows: SheetRow[];
+    sheetColumns: string[];
+  } | null>(null);
+  const importFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImportSubmit = useCallback(async () => {
+    if (!importFile || importLoading) return;
+    setImportLoading(true);
+    setImportError(null);
+
+    try {
+      const rows = await parseFile(importFile);
+      if (!rows.length) {
+        throw new Error("The file appears to be empty or has no data rows.");
+      }
+      setWizardPending({
+        file: importFile,
+        rows,
+        sheetColumns: Object.keys(rows[0]),
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setImportError(msg || "Failed to read file. Please check file format and try again.");
+    } finally {
+      setImportLoading(false);
+    }
+  }, [importFile, importLoading]);
 
   const { guard: guardRowAction } = usePendingGuard<string>();
 
@@ -1022,8 +1076,6 @@ function ItemsView({
   const handleExport = useCallback(
     async (format: "xlsx" | "csv" = "xlsx") => {
       try {
-        setExporting(true);
-        setExportMenuOpen(false);
         const code = inquiry?.consignment_code || codeNames[inquiry?.consignment_code_id || ""] || "Consignment";
         const safeCode = code.replace(/[^a-zA-Z0-9_-]/g, "_");
         const today = new Date().toISOString().slice(0, 10);
@@ -1031,8 +1083,6 @@ function ItemsView({
         await downloadExport(`/inquiries/${inquiryId}`, format, fileBaseName);
       } catch (err) {
         onError(err);
-      } finally {
-        setExporting(false);
       }
     },
     [inquiry, codeNames, inquiryId, onError]
@@ -1369,6 +1419,281 @@ function ItemsView({
     }
   }
 
+  if (isImportPageOpen) {
+    const code = inquiry?.consignment_code || (inquiry ? codeNames[inquiry.consignment_code_id] || "Consignment" : "Consignment");
+    return (
+      <div style={{ padding: "0 4px" }}>
+        {/* Breadcrumb & Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+          <div>
+            <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, marginBottom: "4px" }}>
+              Inquiries &gt; {_buyerName || "Buyer"} &gt; #{code} &gt; Import Products
+            </div>
+            <h1 style={{ fontSize: "22px", fontWeight: 700, color: "#0F172A", margin: 0 }}>
+              Import Inquiry Products (#{code})
+            </h1>
+            <div style={{ fontSize: "13px", color: "#64748b", marginTop: "4px" }}>
+              Upload bulk product line items, quantities, brand preferences, and specifications from Excel (.xlsx, .xls) or CSV.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setIsImportPageOpen(false);
+              setImportFile(null);
+              setImportError(null);
+            }}
+            style={{
+              padding: "8px 16px",
+              borderRadius: "6px",
+              border: "1px solid #cbd5e1",
+              background: "#ffffff",
+              color: "#1e293b",
+              fontWeight: 600,
+              fontSize: "13px",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+          >
+            ← BACK
+          </button>
+        </div>
+
+        <Banner error={importError} />
+
+        {/* Import Summary Results Panel if completed */}
+        {importSummary && (
+          <div style={{ marginBottom: "20px" }}>
+            <ImportSummaryPanel summary={importSummary} error={importError} />
+          </div>
+        )}
+
+        {/* Main Workspace Card */}
+        <div
+          style={{
+            background: "#ffffff",
+            borderRadius: "8px",
+            border: "1px solid #e2e8f0",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+            padding: "28px 36px",
+          }}
+        >
+          {/* Import File Section */}
+          <div style={{ marginBottom: "24px" }}>
+            <label style={{ display: "block", fontSize: "14px", fontWeight: 600, color: "#1e293b", marginBottom: "8px" }}>
+              Import File
+            </label>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  border: "1px solid #cbd5e1",
+                  borderRadius: "6px",
+                  background: "#f8fafc",
+                  padding: "4px 8px",
+                  minWidth: "320px",
+                  maxWidth: "500px",
+                  flex: 1,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => importFileInputRef.current?.click()}
+                  style={{
+                    background: "#ffffff",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: "4px",
+                    padding: "6px 14px",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    color: "#334155",
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Choose File
+                </button>
+                <span
+                  style={{
+                    paddingLeft: "12px",
+                    fontSize: "13px",
+                    color: importFile ? "#0f172a" : "#64748b",
+                    fontWeight: importFile ? 600 : 400,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    flex: 1,
+                  }}
+                >
+                  {importFile ? importFile.name : "No file chosen"}
+                </span>
+                {importFile && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImportFile(null);
+                      if (importFileInputRef.current) importFileInputRef.current.value = "";
+                    }}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "#ef4444",
+                      cursor: "pointer",
+                      fontSize: "14px",
+                      padding: "4px 8px",
+                    }}
+                    title="Clear selected file"
+                  >
+                    ✕
+                  </button>
+                )}
+                <input
+                  ref={importFileInputRef}
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) {
+                      setImportFile(f);
+                      setImportError(null);
+                    }
+                  }}
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => downloadSampleCsv("inquiry", INQUIRY_ITEM_IMPORT_HEADERS)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  background: "#f8fafc",
+                  border: "1px dashed #94a3b8",
+                  borderRadius: "6px",
+                  padding: "8px 14px",
+                  color: "#475569",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                📥 Download Sample CSV Template
+              </button>
+            </div>
+            <div style={{ fontSize: "12px", color: "#64748b", marginTop: "6px" }}>
+              Only CSV, XLS, And XLSX Files Are Allowed. Maximum File Size: 8MB.
+            </div>
+          </div>
+
+          {/* Notes Section */}
+          <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "20px" }}>
+            <div style={{ fontSize: "14px", fontWeight: 700, color: "#1e293b", marginBottom: "12px" }}>
+              Notes:
+            </div>
+            <ul
+              style={{
+                margin: 0,
+                paddingLeft: "20px",
+                fontSize: "13px",
+                lineHeight: "1.9",
+                color: "#334155",
+              }}
+            >
+              <li>Upload Up To <strong>5,000 Rows</strong> Per File.</li>
+              <li>Avoid Special Characters (Like @ # $ % ^ & * ( ) ) In Text Fields.</li>
+              <li>Maximum Allowed File Size: <strong>8 MB</strong>.</li>
+              <li>Only <strong>.Csv</strong>, <strong>.Xls</strong>, And <strong>.Xlsx</strong> Files Are Accepted.</li>
+              <li>Mandatory Columns: <strong>Product Name</strong> (or <strong>Product Code</strong>) and <strong>Quantity</strong>.</li>
+              <li><strong>Product Name</strong> or <strong>Product Code</strong> must already exist in Product Master.</li>
+              <li><strong>Quantity</strong> must be a positive number greater than 0.</li>
+              <li><strong>UOM</strong> is automatically assigned from the Product Master based on the matched product.</li>
+              <li>Products requiring a <strong>License / Certificate</strong> will be automatically flagged and highlighted in red.</li>
+              <li><strong>Status</strong> can be <em>Proposed</em> or <em>Approved</em> (defaults to <em>Proposed</em>).</li>
+              <li>Optional Columns: <strong>Product Code</strong>, <strong>Brand Preference</strong>, <strong>Product Specs / Remarks</strong>, and <strong>Status</strong>.</li>
+              <li>No Blank Rows, Merged Cells, Or Excel Formulas Allowed.</li>
+              <li>Inquiry Product Import May Take <strong>Several Seconds</strong> Depending On The Number Of Rows. Please Do Not Refresh The Page During Import.</li>
+            </ul>
+          </div>
+
+          {/* Action Buttons */}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "32px", borderTop: "1px solid #f1f5f9", paddingTop: "20px", gap: "12px" }}>
+            <button
+              type="button"
+              onClick={() => {
+                setIsImportPageOpen(false);
+                setImportFile(null);
+                setImportError(null);
+              }}
+              style={{
+                padding: "9px 20px",
+                borderRadius: "6px",
+                border: "1px solid #cbd5e1",
+                background: "#ffffff",
+                color: "#475569",
+                fontWeight: 600,
+                fontSize: "13.5px",
+                cursor: "pointer",
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={!importFile || importLoading}
+              onClick={handleImportSubmit}
+              style={{
+                padding: "9px 28px",
+                borderRadius: "6px",
+                border: "none",
+                background: !importFile || importLoading ? "#94a3b8" : "#2563eb",
+                color: "#ffffff",
+                fontWeight: 700,
+                fontSize: "13.5px",
+                cursor: !importFile || importLoading ? "not-allowed" : "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                boxShadow: !importFile || importLoading ? "none" : "0 2px 4px rgba(37,99,235,0.25)",
+              }}
+            >
+              {importLoading ? "Importing..." : "Import"}
+            </button>
+          </div>
+        </div>
+
+        {/* Column Mapping Wizard Modal */}
+        {wizardPending && (
+          <WizardModal
+            file={wizardPending.file}
+            rows={wizardPending.rows}
+            sheetColumns={wizardPending.sheetColumns}
+            apiBase={`/inquiries/${inquiryId}/items`}
+            entityName="inquiry"
+            importHeaders={INQUIRY_ITEM_IMPORT_HEADERS}
+            onClose={() => setWizardPending(null)}
+            onComplete={(summary) => {
+              setWizardPending(null);
+              setImportFile(null);
+              if (importFileInputRef.current) importFileInputRef.current.value = "";
+              if (summary) {
+                setImportSummary(summary);
+              }
+              void load(false);
+            }}
+            onError={(msg) => {
+              setImportError(msg);
+            }}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
       {/* ---------------- Top Consignment Header & Actions ---------------- */}
@@ -1464,115 +1789,24 @@ function ItemsView({
             ← Back
           </button>
 
-          {/* Export Consignment Line Items */}
-          <div style={{ position: "relative" }}>
-            <button
-              type="button"
-              onClick={() => setExportMenuOpen((prev) => !prev)}
-              disabled={exporting || items.length === 0}
-              style={{
-                background: "#ffffff",
-                border: "1px solid #cbd5e1",
-                color: "#0f172a",
-                fontWeight: 600,
-                fontSize: "13px",
-                padding: "7px 14px",
-                borderRadius: "8px",
-                cursor: exporting || items.length === 0 ? "not-allowed" : "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-                opacity: exporting || items.length === 0 ? 0.6 : 1,
-              }}
-              title={items.length === 0 ? "No items to export" : "Export inquiry consignment line items"}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-              <span>{exporting ? "Exporting..." : "Export"}</span>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
-            </button>
-
-            {exportMenuOpen && (
-              <>
-                <div
-                  onClick={() => setExportMenuOpen(false)}
-                  style={{ position: "fixed", inset: 0, zIndex: 998 }}
-                />
-                <div
-                  style={{
-                    position: "absolute",
-                    top: "calc(100% + 4px)",
-                    right: 0,
-                    background: "#ffffff",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: "8px",
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                    padding: "4px",
-                    zIndex: 999,
-                    minWidth: "165px",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "2px",
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => void handleExport("xlsx")}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      padding: "8px 12px",
-                      fontSize: "12.5px",
-                      fontWeight: 500,
-                      color: "#1e293b",
-                      background: "none",
-                      border: "none",
-                      borderRadius: "6px",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      width: "100%",
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "#f1f5f9")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
-                  >
-                    <span style={{ color: "#16a34a", fontWeight: 700, fontSize: "11px", background: "#dcfce7", padding: "2px 5px", borderRadius: "4px" }}>XLSX</span>
-                    Excel Spreadsheet
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleExport("csv")}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      padding: "8px 12px",
-                      fontSize: "12.5px",
-                      fontWeight: 500,
-                      color: "#1e293b",
-                      background: "none",
-                      border: "none",
-                      borderRadius: "6px",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      width: "100%",
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "#f1f5f9")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
-                  >
-                    <span style={{ color: "#2563eb", fontWeight: 700, fontSize: "11px", background: "#dbeafe", padding: "2px 5px", borderRadius: "4px" }}>CSV</span>
-                    CSV Delimited
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+          {/* Imp / Exp Dropdown (Sample File, Import, Export) */}
+          <ImpExpDropdown
+            apiBase={`/inquiries/${inquiryId}/items`}
+            entityName="inquiry"
+            importHeaders={INQUIRY_ITEM_IMPORT_HEADERS}
+            onSummary={(s) => setImportSummary(s)}
+            onError={(msg) => setImportError(msg)}
+            onComplete={() => void load(false)}
+            onExportCsv={() => void handleExport("xlsx")}
+            showImport={true}
+            showExport={items.length > 0}
+            onOpenImportPage={() => {
+              setImportError(null);
+              setImportSummary(null);
+              setImportFile(null);
+              setIsImportPageOpen(true);
+            }}
+          />
           <Can permission="inquiry.create">
             <button
               type="button"
@@ -1594,6 +1828,13 @@ function ItemsView({
           </Can>
         </div>
       </div>
+
+      {/* Import Summary Results Panel if completed */}
+      {importSummary && (
+        <div style={{ marginBottom: "8px" }}>
+          <ImportSummaryPanel summary={importSummary} error={importError} />
+        </div>
+      )}
 
       {/* ---------------- 3 KPI Summary Cards ---------------- */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px" }}>
@@ -3711,6 +3952,31 @@ function ItemsView({
             void load();
           }}
           onError={onError}
+        />
+      )}
+
+      {/* 9. Column Mapping Wizard Modal (from ImpExpDropdown) */}
+      {wizardPending && (
+        <WizardModal
+          file={wizardPending.file}
+          rows={wizardPending.rows}
+          sheetColumns={wizardPending.sheetColumns}
+          apiBase={`/inquiries/${inquiryId}/items`}
+          entityName="inquiry"
+          importHeaders={INQUIRY_ITEM_IMPORT_HEADERS}
+          onClose={() => setWizardPending(null)}
+          onComplete={(summary) => {
+            setWizardPending(null);
+            setImportFile(null);
+            if (importFileInputRef.current) importFileInputRef.current.value = "";
+            if (summary) {
+              setImportSummary(summary);
+            }
+            void load(false);
+          }}
+          onError={(msg) => {
+            setImportError(msg);
+          }}
         />
       )}
     </div>

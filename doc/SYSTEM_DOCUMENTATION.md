@@ -1,7 +1,7 @@
 # Enterprise ERP System — Unified Architecture, Feature & Technical Manual
 
 > **System Version:** 1.1.0 (Production)  
-> **Last Updated:** September 8, 2026 (Inquiry Consignment Line-Items Excel/CSV Export subsystem, media storage subsystem & local disk fallback, transient product attributes type error resolution, Products Master server-side pagination & comprehensive search upgrade, Vite proxy timeout resolution, Neon Serverless migration)  
+> **Last Updated:** September 9, 2026 (Supabase Pro PostgreSQL 100% zero-data-loss database migration, Inquiry consignment items versioning, cross-instance integration outbox tables, Supabase storage buckets verification)  
 > **Repository:** `https://github.com/rupeshinhyma-oss/Yinglima_ERP.git`  
 > **Architectural Pattern:** Modular Async Monolith (FastAPI) + React 18 SPA (Vite) + Real-Time WebSocket Event Bus  
 > **Target Audience:** Systems Architects, Software Engineers, DevOps, and Autonomous AI Coding Assistants.  
@@ -363,9 +363,16 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
 - **Features:** Client directory with credit limits, client grades (A, B, C, Premium), multi-address delivery matrix (Billing, Shipping, Warehouse), and bulk import/export.
 
 ### 8.8. Inquiries, RFQs & AI Quotation Extractor
-- **Endpoints:** `GET /inquiries`, `POST /inquiries`, `POST /inquiries/{id}/rfq/dispatch`, `POST /inquiries/{id}/send-email-message`, `GET /inquiries/{id}/messages`, `POST /inquiries/{id}/quotes/manual`, `POST /inquiries/{id}/quotes/extract-pdf`, `POST /inquiries/{id}/convert-to-proforma`, `GET /inquiries/{id}/compare-matrix`.
+- **Endpoints:** `GET /inquiries`, `POST /inquiries`, `POST /inquiries/{inquiry_id}/items/import`, `GET /inquiries/sample-template`, `POST /inquiries/{id}/rfq/dispatch`, `POST /inquiries/{id}/send-email-message`, `GET /inquiries/{id}/messages`, `POST /inquiries/{id}/quotes/manual`, `POST /inquiries/{id}/quotes/extract-pdf`, `POST /inquiries/{id}/convert-to-proforma`, `GET /inquiries/{id}/compare-matrix`.
 - **Features:**
   - 3-layer RFQ and Quotation management lifecycle: `Buyer Directory` $\rightarrow$ `Consignments` $\rightarrow$ `Line Items & Quotation Matrix`.
+  - **Inquiry Product Bulk Import (Excel .xlsx, .xls & .csv)**:
+    - Dedicated full-page import workflow in Layer 3 Consignment Workspace (`ItemsView`) modeled identically on the Supplier Import system.
+    - Unified `Imp / Exp ▾` action button: provides *Sample File* download, *Import* (navigates to the dedicated import view), and *Export* (`.xlsx` or `.csv`).
+    - Dedicated import interface featuring drag/drop file upload, instant `📥 Download Sample CSV Template` button, format limits (max 5,000 rows, max 8 MB), and clear validation guidelines.
+    - **Interactive Column Mapping Wizard (`WizardModal`)**: Pre-parses files in-browser, auto-matches sheet headers to ERP fields using normalized synonyms (`MATCHED` badge), displays a live 5-row preview table, and validates rows before uploading.
+    - **Intelligent Product Master Resolution**: Resolves items first by Product Code / SKU (exact match) and falls back to Product Name or Tally Name. Automatically assigns the product's official Unit of Measurement (`uom_id`) and sets `requires_license` flags (highlighted in red) without requiring manual data entry.
+    - **Robust Error Handling & Rollup Recomputation**: Validates positive quantities and item statuses (`Proposed` or `Approved`, default `Proposed`). Failed rows are reported with exact spreadsheet row numbers and explanations. On completion, consignment weight, CBM, and status rollups recompute immediately and dispatch real-time WebSocket events (`inquiry.updated`).
   - **Interactive Inline Email Composer (Gmail/Figma-Style)**: Located in the Inquiries -> Emails tab. Allows users to write custom follow-up emails or replies directly to suppliers, auto-selects recipient emails from known suppliers, pre-fills context-aware subject lines, attaches files, and immediately dispatches outbound SMTP emails. Dispatched emails are instantly recorded into the communication timeline.
   - **Dynamic Supplier Resolution & Email Deduplication**: `GET /inquiries/{id}/messages` and the frontend Emails tab automatically resolve unlinked raw recipient/sender emails to official Supplier company names via `supplier_emails`, unifying company names and eliminating raw email duplicates in the communication filter dropdown.
   - **Strict 1-Quote AI Extraction Policy**: The inbound AI parsing worker only extracts quotation terms from initial inbound supplier replies. Subsequent follow-up correspondence and chats between sales personnel and suppliers are logged directly to the email timeline without AI duplication or spurious quotation matrix modifications. Communication badges dynamically reflect whether a quotation record actually exists in the matrix (displaying quote number and price) or whether it represents a discussion thread.
@@ -462,18 +469,19 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
 - **Workflow:** File Upload (.xlsx / .csv) $\rightarrow$ Header Fuzzy Matching $\rightarrow$ Column Mapping UI $\rightarrow$ Client-Side Validation $\rightarrow$ Transactional Batch Insertion $\rightarrow$ Error Log Report.
 - **Duplicate Prevention:** Validates existing database records by TIN, Email, Phone, or Code before commit.
 
-### 11.1. Media & File Storage Subsystem (Supabase & Local Disk Fallback)
+### 11.1. Media & File Storage Subsystem (Neon S3, Supabase & Local Disk Fallback)
 
-**Files:** `backend/app/common/storage.py`, `backend/app/main.py`
+**Files:** `backend/app/common/storage.py`, `backend/app/core/config.py`, `backend/app/main.py`
 
-- **Dual-Storage Engine:** Provides unified storage abstractions for product images, supplier factory media, and quotation attachments:
-  1. **Supabase Cloud Storage:** When `SUPABASE_BASE_URL` and `SUPABASE_AUTH_KEY` / `SUPABASE_SERVICE_KEY` are provided in `.env`, uploads files directly to target public buckets (`product-images`, `supplier-media`, `quotations`) via async HTTP (`httpx`), automatically creating the buckets if not present.
-  2. **Local Filesystem Fallback (Neon Architecture):** When running against Neon PostgreSQL without cloud bucket access, `save_uploaded_file` seamlessly saves uploaded files to local disk under `uploads/<local_subfolder>/` (`uploads/products/`, `uploads/suppliers/`).
+- **Tri-Layer Storage Engine:** Provides unified storage abstractions for product images, supplier factory media, and quotation attachments:
+  1. **Neon S3 Object Storage (Primary Cloud Storage):** When `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, and `AWS_SECRET_ACCESS_KEY` are provided in `.env`, uploads files directly to Neon S3-compatible public buckets (`product-images`, `supplier-media`, `quotations`) via `boto3` (using path-style addressing `addressing_style: path`), returning direct high-speed CDN/public URLs (`https://<project-storage-host>/<bucket>/<filename>`).
+  2. **Supabase Cloud Storage (Secondary Cloud Fallback):** When `SUPABASE_BASE_URL` and `SUPABASE_AUTH_KEY` / `SUPABASE_SERVICE_KEY` are provided in `.env`, uploads files directly to target public buckets via async HTTP (`httpx`), automatically creating the buckets if not present.
+  3. **Local Filesystem Fallback:** When running offline or without cloud bucket credentials, `save_uploaded_file` seamlessly saves uploaded files to local disk under `uploads/<local_subfolder>/` (`uploads/products/`, `uploads/suppliers/`, `uploads/quotations/`).
 - **Static Mounting:** FastAPI mounts `uploads/` statically at both `/uploads` and `/static/uploads` via `StaticFiles(directory=uploads_dir)` in `app/main.py`, ensuring instant browser access.
 - **Filename Sanitization & MIME Resolution:**
   - `sanitize_filename(filename)`: Strips path traversal characters (`..`, `/`, `\`), collapses repetitive delimiters, enforces safe ASCII tokens, and limits base names to 120 characters prefixed with a unique UUID (`{uuid4}_{clean_name}`).
   - `guess_content_type(filename)`: Resolves standard MIME types (`image/jpeg`, `image/png`, `image/webp`, `video/mp4`, `application/pdf`, `.xlsx`, `.csv`).
-- **Database Persistence Model:** Database entities (`products.images`, `suppliers.media_urls`) store URL arrays (e.g. `["/uploads/products/xyz.webp"]` or `["https://...supabase.co/..."]`), providing 100% portability across cloud and local storage backends without requiring database schema alterations.
+- **Database Persistence Model:** Database entities (`products.images`, `suppliers.media_urls`) store URL arrays (e.g. `["https://br-odd-tree-aybmdshz.storage.../product-images/xyz.webp"]` or `["/uploads/products/xyz.webp"]`), providing 100% portability across cloud and local storage backends without requiring database schema alterations.
 
 ---
 

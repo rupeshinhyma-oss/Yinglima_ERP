@@ -267,6 +267,26 @@ class Settings(BaseSettings):
         description="Optional custom Supabase base URL (defaults to https://{SUPABASE_PROJECT_ID}.supabase.co)",
     )
 
+    # -------------------------------------------------------------------
+    # Neon S3-Compatible Object Storage
+    # -------------------------------------------------------------------
+    AWS_ENDPOINT_URL_S3: str | None = Field(
+        default=None,
+        description="Neon S3 endpoint URL",
+    )
+    AWS_ACCESS_KEY_ID: str | None = Field(
+        default=None,
+        description="Neon S3 access key ID",
+    )
+    AWS_SECRET_ACCESS_KEY: str | None = Field(
+        default=None,
+        description="Neon S3 secret access key",
+    )
+    AWS_REGION: str = Field(
+        default="us-east-2",
+        description="Neon S3 region",
+    )
+
     @property
     def supabase_base_url(self) -> str:
         """Return the effective Supabase base URL."""
