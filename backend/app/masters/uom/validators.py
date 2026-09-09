@@ -10,15 +10,17 @@ from app.core.exceptions import BadRequestException
 
 def validate_uom_row(raw_row: dict[str, str], row_number: int) -> dict[str, Any]:
     """Validate one raw import row and return clean field kwargs, or raise on bad data."""
-    code = (raw_row.get("code") or "").strip().upper()
-    name = (raw_row.get("name") or "").strip()
+    code = (raw_row.get("code") or raw_row.get("Code") or raw_row.get("UOM Code") or "").strip().upper()
+    name = (raw_row.get("name") or raw_row.get("UOM Name") or raw_row.get("Name") or "").strip()
+    short_name = (raw_row.get("short_name") or raw_row.get("Short Name") or "").strip() or None
+
+    if not name:
+        raise BadRequestException(f"Row {row_number}: 'name' (UOM Name) is required.")
 
     if not code:
-        raise BadRequestException(f"Row {row_number}: 'code' is required.")
-    if not name:
-        raise BadRequestException(f"Row {row_number}: 'name' is required.")
+        code = (short_name or name).strip().upper().replace(" ", "_")[:20]
 
-    status_raw = (raw_row.get("status") or "active").strip().lower()
+    status_raw = (raw_row.get("status") or raw_row.get("Status") or "active").strip().lower()
     try:
         status = RecordStatus(status_raw)
     except ValueError as exc:
@@ -29,7 +31,7 @@ def validate_uom_row(raw_row: dict[str, str], row_number: int) -> dict[str, Any]
     return {
         "code": code,
         "name": name,
-        "short_name": (raw_row.get("short_name") or "").strip() or None,
-        "description": (raw_row.get("description") or "").strip() or None,
+        "short_name": short_name,
+        "description": (raw_row.get("description") or raw_row.get("Description") or "").strip() or None,
         "status": status,
     }

@@ -16,15 +16,27 @@ from app.core.exceptions import BadRequestException
 
 def validate_country_row(raw_row: dict[str, str], row_number: int) -> dict[str, Any]:
     """Validate one raw import row and return clean field kwargs, or raise on bad data."""
-    name = (raw_row.get("name") or "").strip()
-    code = (raw_row.get("code") or "").strip().upper()
+    name = (
+        raw_row.get("name")
+        or raw_row.get("Country Name")
+        or raw_row.get("country_name")
+        or raw_row.get("Country")
+        or ""
+    ).strip()
+    code = (
+        raw_row.get("code")
+        or raw_row.get("ISO Code")
+        or raw_row.get("Country Code")
+        or raw_row.get("country_code")
+        or ""
+    ).strip().upper()
 
     if not name:
-        raise BadRequestException(f"Row {row_number}: 'name' is required.")
+        raise BadRequestException(f"Row {row_number}: 'name' (Country Name) is required.")
     if not code:
-        raise BadRequestException(f"Row {row_number}: 'code' is required.")
+        raise BadRequestException(f"Row {row_number}: 'code' (ISO Code) is required.")
 
-    status_raw = (raw_row.get("status") or "active").strip().lower()
+    status_raw = (raw_row.get("status") or raw_row.get("Status") or "active").strip().lower()
     try:
         status = RecordStatus(status_raw)
     except ValueError as exc:
@@ -35,10 +47,10 @@ def validate_country_row(raw_row: dict[str, str], row_number: int) -> dict[str, 
     return {
         "name": name,
         "code": code,
-        "iso2": (raw_row.get("iso2") or "").strip().upper() or None,
-        "iso3": (raw_row.get("iso3") or "").strip().upper() or None,
-        "phone_code": (raw_row.get("phone_code") or "").strip() or None,
-        "nationality": (raw_row.get("nationality") or "").strip() or None,
-        "currency": (raw_row.get("currency") or "").strip().upper() or None,
+        "iso2": (raw_row.get("iso2") or raw_row.get("ISO2") or "").strip().upper() or None,
+        "iso3": (raw_row.get("iso3") or raw_row.get("ISO3") or "").strip().upper() or None,
+        "phone_code": (raw_row.get("phone_code") or raw_row.get("Phone Code") or "").strip() or None,
+        "nationality": (raw_row.get("nationality") or raw_row.get("Nationality") or "").strip() or None,
+        "currency": (raw_row.get("currency") or raw_row.get("Currency Code") or raw_row.get("Currency") or "").strip().upper() or None,
         "status": status,
     }

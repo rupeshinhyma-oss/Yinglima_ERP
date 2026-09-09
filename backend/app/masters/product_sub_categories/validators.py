@@ -15,10 +15,23 @@ def validate_product_sub_category_row(raw_row: dict[str, str], row_number: int) 
     ``category_code`` is resolved to a ``category_id`` by the service layer,
     which has DB access.
     """
-    name = (raw_row.get("name") or raw_row.get("sub_category_name") or "").strip()
-    code = (raw_row.get("code") or raw_row.get("sub_category_code") or "").strip()
+    name = (
+        raw_row.get("name")
+        or raw_row.get("Sub-Category Name")
+        or raw_row.get("Sub Category Name")
+        or raw_row.get("Sub Category")
+        or raw_row.get("Sub-Category")
+        or raw_row.get("sub_category_name")
+        or ""
+    ).strip()
+    code = (raw_row.get("code") or raw_row.get("sub_category_code") or raw_row.get("Sub-Category Code") or "").strip()
     category_code = (
-        raw_row.get("category_code") or raw_row.get("category_name") or raw_row.get("category") or ""
+        raw_row.get("category_code")
+        or raw_row.get("Category Name")
+        or raw_row.get("category_name")
+        or raw_row.get("Category")
+        or raw_row.get("category")
+        or ""
     ).strip()
 
     if not name:
@@ -26,7 +39,7 @@ def validate_product_sub_category_row(raw_row: dict[str, str], row_number: int) 
     if not category_code:
         raise BadRequestException(f"Row {row_number}: 'category' (Category Name) is required.")
 
-    status_raw = (raw_row.get("status") or "active").strip().lower()
+    status_raw = (raw_row.get("status") or raw_row.get("Status") or "active").strip().lower()
     try:
         status = RecordStatus(status_raw)
     except ValueError as exc:

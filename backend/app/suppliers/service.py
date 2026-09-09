@@ -119,7 +119,7 @@ class SupplierService:
         from sqlalchemy import func, select
 
         count_stmt = select(func.count()).select_from(base_stmt.subquery())
-        total = int((await self.repository.session.execute(count_stmt)).scalar_one())
+        total = (await self.repository.session.execute(count_stmt)).scalar_one()
 
         list_stmt = self.repository._apply_sort(base_stmt, query.sort)
         list_stmt = list_stmt.offset(query.page.offset).limit(query.page.limit)
@@ -576,11 +576,11 @@ class SupplierService:
 
             # 2. Strict State validation
             state = next(
-                (s for s in all_states if s.country_id == country.id and (s.name.lower() == state_raw.lower() or s.code.lower() == state_raw.lower())),
+                (s for s in all_states if s.country_id == country.id and (s.name.lower() == state_raw.lower() or (s.code and s.code.lower() == state_raw.lower()))),
                 None
             )
             if state is None:
-                state = next((s for s in all_states if s.name.lower() == state_raw.lower() or s.code.lower() == state_raw.lower()), None)
+                state = next((s for s in all_states if s.name.lower() == state_raw.lower() or (s.code and s.code.lower() == state_raw.lower())), None)
             if state is None:
                 raise BadRequestException(f"State '{state_raw}' does not exist in State Master for Country '{country.name}'.")
 
@@ -699,7 +699,7 @@ class SupplierService:
                     "State / Province": states.get(s.state_id, ""),
                     "City": cities.get(s.city_id, ""),
                     "Brand Description": s.brand_description or "",
-                    "Supplier Type": str(s.supplier_type) if s.supplier_type else "",
+                    "Supplier Type": s.supplier_type or "",
                     "Current Status": s.current_status.value.capitalize() if s.current_status else "",
                     "Supplier Grade": f"Grade {s.supplier_grade.value.upper()}" if s.supplier_grade else "",
                     "Potential": s.potential.value.capitalize() if s.potential else "",

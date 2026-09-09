@@ -34,6 +34,7 @@ Thumbs.db
 backend/uploads/
 uploads/
 
-# Binaries
+# Binaries & Temporary Office lock files
 *.exe
-
+~$*
+.~lock.*

@@ -417,6 +417,67 @@ export function BuyersPage() {
     });
   }, [sortDirection]);
 
+  const sortedRows = useMemo(() => {
+    if (sortColIndex === null) return rows;
+    const list = [...rows];
+    list.sort((a, b) => {
+      let valA: string | number = "";
+      let valB: string | number = "";
+      switch (sortColIndex) {
+        case 1: {
+          const tA = (a as any).created_at ? new Date((a as any).created_at).getTime() : 0;
+          const tB = (b as any).created_at ? new Date((b as any).created_at).getTime() : 0;
+          return sortDirection === "asc" ? tA - tB : tB - tA;
+        }
+        case 2:
+          valA = a.company_name || "";
+          valB = b.company_name || "";
+          break;
+        case 3:
+          valA = a.buyer_type || "";
+          valB = b.buyer_type || "";
+          break;
+        case 4:
+          valA = (a.category_ids || []).map((id) => categories.items.find((c) => c.id === id)?.name || categoryNamesFallback.items.find((c) => c.id === id)?.name || "").filter(Boolean).join(", ");
+          valB = (b.category_ids || []).map((id) => categories.items.find((c) => c.id === id)?.name || categoryNamesFallback.items.find((c) => c.id === id)?.name || "").filter(Boolean).join(", ");
+          break;
+        case 5:
+          valA = (a.sub_category_ids || []).map((id) => subCategories.items.find((sc) => sc.id === id)?.name || subCategoryNamesFallback.items.find((sc) => sc.id === id)?.name || "").filter(Boolean).join(", ");
+          valB = (b.sub_category_ids || []).map((id) => subCategories.items.find((sc) => sc.id === id)?.name || subCategoryNamesFallback.items.find((sc) => sc.id === id)?.name || "").filter(Boolean).join(", ");
+          break;
+        case 6:
+          valA = countries.items.find((c) => c.id === a.country_id)?.name || "";
+          valB = countries.items.find((c) => c.id === b.country_id)?.name || "";
+          break;
+        case 7:
+          valA = a.current_status || "";
+          valB = b.current_status || "";
+          break;
+        case 8:
+          valA = a.potential || "";
+          valB = b.potential || "";
+          break;
+        case 9:
+          valA = a.buyer_grade || "";
+          valB = b.buyer_grade || "";
+          break;
+        case 10: {
+          const tA = (a as any).created_at ? new Date((a as any).created_at).getTime() : 0;
+          const tB = (b as any).created_at ? new Date((b as any).created_at).getTime() : 0;
+          return sortDirection === "asc" ? tA - tB : tB - tA;
+        }
+        default:
+          return 0;
+      }
+      const strA = String(valA).trim().toLowerCase();
+      const strB = String(valB).trim().toLowerCase();
+      return sortDirection === "asc"
+        ? strA.localeCompare(strB, undefined, { numeric: true, sensitivity: "base" })
+        : strB.localeCompare(strA, undefined, { numeric: true, sensitivity: "base" });
+    });
+    return list;
+  }, [rows, sortColIndex, sortDirection, categories.items, subCategories.items, countries.items, categoryNamesFallback.items, subCategoryNamesFallback.items]);
+
   /* Selection & Detail View */
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [detailBuyer, setDetailBuyer] = useState<Buyer | null>(null);
@@ -2380,67 +2441,6 @@ export function BuyersPage() {
   /* ------------------------------------------------------------------------- */
   /* RENDER: MAIN BUYER MASTER LIST VIEW                                        */
   /* ------------------------------------------------------------------------- */
-  const sortedRows = useMemo(() => {
-    if (sortColIndex === null) return rows;
-    const list = [...rows];
-    list.sort((a, b) => {
-      let valA: string | number = "";
-      let valB: string | number = "";
-      switch (sortColIndex) {
-        case 1: {
-          const tA = (a as any).created_at ? new Date((a as any).created_at).getTime() : 0;
-          const tB = (b as any).created_at ? new Date((b as any).created_at).getTime() : 0;
-          return sortDirection === "asc" ? tA - tB : tB - tA;
-        }
-        case 2:
-          valA = a.company_name || "";
-          valB = b.company_name || "";
-          break;
-        case 3:
-          valA = a.buyer_type || "";
-          valB = b.buyer_type || "";
-          break;
-        case 4:
-          valA = (a.category_ids || []).map((id) => categories.items.find((c) => c.id === id)?.name || categoryNamesFallback.items.find((c) => c.id === id)?.name || "").filter(Boolean).join(", ");
-          valB = (b.category_ids || []).map((id) => categories.items.find((c) => c.id === id)?.name || categoryNamesFallback.items.find((c) => c.id === id)?.name || "").filter(Boolean).join(", ");
-          break;
-        case 5:
-          valA = (a.sub_category_ids || []).map((id) => subCategories.items.find((sc) => sc.id === id)?.name || subCategoryNamesFallback.items.find((sc) => sc.id === id)?.name || "").filter(Boolean).join(", ");
-          valB = (b.sub_category_ids || []).map((id) => subCategories.items.find((sc) => sc.id === id)?.name || subCategoryNamesFallback.items.find((sc) => sc.id === id)?.name || "").filter(Boolean).join(", ");
-          break;
-        case 6:
-          valA = countries.items.find((c) => c.id === a.country_id)?.name || "";
-          valB = countries.items.find((c) => c.id === b.country_id)?.name || "";
-          break;
-        case 7:
-          valA = a.current_status || "";
-          valB = b.current_status || "";
-          break;
-        case 8:
-          valA = a.potential || "";
-          valB = b.potential || "";
-          break;
-        case 9:
-          valA = a.buyer_grade || "";
-          valB = b.buyer_grade || "";
-          break;
-        case 10: {
-          const tA = (a as any).created_at ? new Date((a as any).created_at).getTime() : 0;
-          const tB = (b as any).created_at ? new Date((b as any).created_at).getTime() : 0;
-          return sortDirection === "asc" ? tA - tB : tB - tA;
-        }
-        default:
-          return 0;
-      }
-      const strA = String(valA).trim().toLowerCase();
-      const strB = String(valB).trim().toLowerCase();
-      return sortDirection === "asc"
-        ? strA.localeCompare(strB, undefined, { numeric: true, sensitivity: "base" })
-        : strB.localeCompare(strA, undefined, { numeric: true, sensitivity: "base" });
-    });
-    return list;
-  }, [rows, sortColIndex, sortDirection, categories.items, subCategories.items, countries.items, categoryNamesFallback.items, subCategoryNamesFallback.items]);
-
   return (
     <AppShell activeKey="buyers">
       <main className="page" style={{ padding: "20px", maxWidth: "1600px", margin: "0 auto" }}>

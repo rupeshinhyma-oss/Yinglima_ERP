@@ -139,7 +139,17 @@ class BrandService:
 
         async def _create(field_values: dict[str, Any]) -> Brand:
             name = field_values["name"]
-            code = field_values["code"]
+            code = field_values.get("code")
+            if not code:
+                clean_name = "".join(c.upper() for c in name if c.isalnum())[:10]
+                code = f"BR-{clean_name}" if clean_name else "BR-GEN"
+                counter = 1
+                base_code = code
+                while await self.repository.get_by_code(code) is not None:
+                    code = f"{base_code}{counter}"
+                    counter += 1
+                field_values["code"] = code
+
             existing_by_name = await self.repository.get_by_name(name)
             if existing_by_name is not None:
                 raise ConflictException(
@@ -152,7 +162,7 @@ class BrandService:
                 )
             return await self.repository.create(**field_values)
 
-        summary = await run_import(rows, row_validator=validate_brand_row, row_creator=_create, dedupe_keys=("code",))
+        summary = await run_import(rows, row_validator=validate_brand_row, row_creator=_create, dedupe_keys=("name",))
         await self._invalidate_cache()
         return summary
 

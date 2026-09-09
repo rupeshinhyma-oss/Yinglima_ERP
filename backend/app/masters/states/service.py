@@ -142,7 +142,9 @@ class StateService:
             country_code = field_values.pop("country_code")
             country = await self.country_repository.get_by_code(country_code)
             if country is None:
-                raise ValueError(f"Country code {country_code!r} does not exist.")
+                country = await self.country_repository.get_by_name(country_code)
+            if country is None:
+                raise BadRequestException(f"Country code or name {country_code!r} does not exist.")
             field_values["country_id"] = country.id
             name = field_values["name"]
             existing = await self.repository.get_by_name_in_country(country.id, name)

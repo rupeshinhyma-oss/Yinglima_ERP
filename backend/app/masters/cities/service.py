@@ -150,13 +150,15 @@ class CityService:
             state_name = field_values.pop("state_name")
             country = await self.country_repository.get_by_code(country_code)
             if country is None:
-                raise ValueError(f"Country code {country_code!r} does not exist.")
+                country = await self.country_repository.get_by_name(country_code)
+            if country is None:
+                raise BadRequestException(f"Country {country_code!r} does not exist.")
             matching_states = [
                 s for s in await self.state_repository.list_all()
-                if s.country_id == country.id and s.name == state_name
+                if s.country_id == country.id and s.name.strip().lower() == state_name.strip().lower()
             ]
             if not matching_states:
-                raise ValueError(f"State {state_name!r} does not exist in country {country_code!r}.")
+                raise BadRequestException(f"State {state_name!r} does not exist in country {country.name!r}.")
             state = matching_states[0]
             field_values["country_id"] = country.id
             field_values["state_id"] = state.id

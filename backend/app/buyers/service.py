@@ -96,7 +96,7 @@ class BuyerService:
         from sqlalchemy import func, select
 
         count_stmt = select(func.count()).select_from(base_stmt.subquery())
-        total = int((await self.repository.session.execute(count_stmt)).scalar_one())
+        total = (await self.repository.session.execute(count_stmt)).scalar_one()
 
         list_stmt = self.repository._apply_sort(base_stmt, query.sort)
         list_stmt = list_stmt.offset(query.page.offset).limit(query.page.limit)
@@ -200,16 +200,14 @@ class BuyerService:
         await self._validate_sub_categories(sub_category_ids)
         self._validate_potential_reason(field_values.get("potential"), field_values.get("potential_reason"))
 
-        duplicate = await self.repository.find_duplicate(
+        dup_match = await self.repository.find_duplicate(
             company_name=company_name,
             calling_number=field_values.get("contact_calling_number"),
             whatsapp_number=field_values.get("contact_whatsapp_number"),
         )
-        if duplicate is not None:
-            raise ConflictException(
-                f"A buyer named {company_name!r} already exists with a matching calling or WhatsApp number "
-                "(duplicate check: Company Name + Calling Number + WhatsApp Number)."
-            )
+        if dup_match is not None:
+            duplicate, reason = dup_match
+            raise ConflictException(f"{reason}.")
 
         buyer = await self.repository.create(**field_values)
 
@@ -254,17 +252,15 @@ class BuyerService:
         new_calling = field_values.get("contact_calling_number", buyer.contact_calling_number)
         new_whatsapp = field_values.get("contact_whatsapp_number", buyer.contact_whatsapp_number)
         if any(k in field_values for k in ("company_name", "contact_calling_number", "contact_whatsapp_number")):
-            duplicate = await self.repository.find_duplicate(
+            dup_match = await self.repository.find_duplicate(
                 company_name=new_company_name,
                 calling_number=new_calling,
                 whatsapp_number=new_whatsapp,
                 exclude_id=buyer_id,
             )
-            if duplicate is not None:
-                raise ConflictException(
-                    f"A buyer named {new_company_name!r} already exists with a matching calling or WhatsApp "
-                    "number (duplicate check: Company Name + Calling Number + WhatsApp Number)."
-                )
+            if dup_match is not None:
+                duplicate, reason = dup_match
+                raise ConflictException(f"{reason}.")
 
         potential = field_values.get("potential", buyer.potential)
         potential_reason = field_values.get("potential_reason", buyer.potential_reason)
@@ -452,7 +448,7 @@ class BuyerService:
             cat_names = [categories.get(link.category_id, "") for link in b.category_links if link.category_id in categories]
             sub_cat_names = [sub_categories.get(link.sub_category_id, "") for link in b.sub_category_links if link.sub_category_id in sub_categories]
 
-            buyer_type_str = b.buyer_type.value.upper() if hasattr(b.buyer_type, "value") else str(b.buyer_type or "").upper()
+            buyer_type_str = b.buyer_type.value.upper() if hasattr(b.buyer_type, "value") else (b.buyer_type or "").upper()
             curr_status_str = b.current_status.value.upper() if hasattr(b.current_status, "value") else str(b.current_status or "").upper()
             potential_str = b.potential.value.upper() if hasattr(b.potential, "value") else str(b.potential or "").upper()
             grade_str = f"Grade {b.buyer_grade.value.upper()}" if hasattr(b.buyer_grade, "value") else (f"Grade {b.buyer_grade}" if b.buyer_grade else "")
@@ -510,6 +506,21 @@ class BuyerService:
 
         country_name_map = {str(c.id): c.name for c in all_countries}
 
+        existing_buyers = await self.repository.list_all()
+        existing_name_map = {b.company_name.strip().lower(): b for b in existing_buyers}
+        existing_calling_map: dict[str, Buyer] = {}
+        existing_whatsapp_map: dict[str, Buyer] = {}
+        import re
+        for b in existing_buyers:
+            if b.contact_calling_number:
+                digits = re.sub(r"\D", "", b.contact_calling_number)
+                if len(digits) >= 6:
+                    existing_calling_map[digits] = b
+            if b.contact_whatsapp_number:
+                digits = re.sub(r"\D", "", b.contact_whatsapp_number)
+                if len(digits) >= 6:
+                    existing_whatsapp_map[digits] = b
+
         def _serialize_buyer_for_compare(b: Buyer) -> dict[str, Any]:
             return {
                 "Company Name": b.company_name,
@@ -534,17 +545,45 @@ class BuyerService:
             if batch_key in seen_in_batch:
                 raise ConflictException(f"Buyer '{company_name}' appears multiple times in the import file (duplicate).")
 
-            # DB 3-Way duplicate check
-            dup = await self.repository.find_duplicate(
-                company_name=company_name,
-                calling_number=calling_num,
-                whatsapp_number=wa_num,
-            )
-            if dup is not None:
+            # 1. Company Name Duplicate Check
+            if company_name.lower() in existing_name_map:
+                dup = existing_name_map[company_name.lower()]
                 raise ConflictException(
-                    f"Buyer '{company_name}' already exists (duplicate check: Company Name / Calling / WhatsApp Number).",
+                    f"Buyer '{company_name}' already exists in Buyer Master (duplicate company name).",
                     details={"existing": _serialize_buyer_for_compare(dup)},
                 )
+
+            # 2. Calling Number Duplicate Check
+            clean_call = re.sub(r"\D", "", calling_num) if calling_num else ""
+            if clean_call and len(clean_call) >= 6:
+                if clean_call in existing_calling_map:
+                    dup = existing_calling_map[clean_call]
+                    raise ConflictException(
+                        f"Calling number '{calling_num}' already exists in Buyer Master (used by '{dup.company_name}').",
+                        details={"existing": _serialize_buyer_for_compare(dup)},
+                    )
+                if clean_call in existing_whatsapp_map:
+                    dup = existing_whatsapp_map[clean_call]
+                    raise ConflictException(
+                        f"Calling number '{calling_num}' already exists as WhatsApp number in Buyer Master (used by '{dup.company_name}').",
+                        details={"existing": _serialize_buyer_for_compare(dup)},
+                    )
+
+            # 3. WhatsApp Number Duplicate Check
+            clean_wa = re.sub(r"\D", "", wa_num) if wa_num else ""
+            if clean_wa and len(clean_wa) >= 6:
+                if clean_wa in existing_whatsapp_map:
+                    dup = existing_whatsapp_map[clean_wa]
+                    raise ConflictException(
+                        f"WhatsApp number '{wa_num}' already exists in Buyer Master (used by '{dup.company_name}').",
+                        details={"existing": _serialize_buyer_for_compare(dup)},
+                    )
+                if clean_wa in existing_calling_map:
+                    dup = existing_calling_map[clean_wa]
+                    raise ConflictException(
+                        f"WhatsApp number '{wa_num}' already exists as Calling number in Buyer Master (used by '{dup.company_name}').",
+                        details={"existing": _serialize_buyer_for_compare(dup)},
+                    )
 
             # Strict Buyer Type validation
             buyer_type_raw = field_values.get("buyer_type")
@@ -595,6 +634,11 @@ class BuyerService:
 
             buyer = await self.create(**field_values)
             seen_in_batch.add(batch_key)
+            existing_name_map[batch_key] = buyer
+            if clean_call and len(clean_call) >= 6:
+                existing_calling_map[clean_call] = buyer
+            if clean_wa and len(clean_wa) >= 6:
+                existing_whatsapp_map[clean_wa] = buyer
             return buyer
 
         summary = await run_import(rows, row_validator=validate_buyer_row, row_creator=_create)

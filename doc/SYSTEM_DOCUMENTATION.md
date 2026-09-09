@@ -1,7 +1,7 @@
 # Enterprise ERP System — Unified Architecture, Feature & Technical Manual
 
 > **System Version:** 1.1.0 (Production)  
-> **Last Updated:** September 9, 2026 (Supabase Pro PostgreSQL 100% zero-data-loss database migration, Inquiry consignment items versioning, cross-instance integration outbox tables, Supabase storage buckets verification)  
+> **Last Updated:** September 9, 2026 (Universal Bulk Import & Deduplication Engine protected for remote Git merges; 8-file verification test suite added to testingimportfile/)  
 > **Repository:** `https://github.com/rupeshinhyma-oss/Yinglima_ERP.git`  
 > **Architectural Pattern:** Modular Async Monolith (FastAPI) + React 18 SPA (Vite) + Real-Time WebSocket Event Bus  
 > **Target Audience:** Systems Architects, Software Engineers, DevOps, and Autonomous AI Coding Assistants.  
@@ -345,8 +345,14 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
   - **Cycle Prevention:** Strict validation prevents assigning an ancestor as a child or vice-versa.
 
 ### 8.4. Master Data & Generic Catalogs
-- **Modules:** Brands, Categories, Sub-Categories, Countries, States, Cities, Currencies, Units of Measurement (UOM), HSN/SAC Codes, and Operating Companies.
+- **Modules:** Brands, Categories, Sub-Categories, Countries, States, Cities, Currencies, Units of Measurement (UOM), HSN/SAC Codes, Buyer Types, Supplier Types, and Operating Companies.
 - **Features:** Built on the unified `MasterPage.tsx` engine providing uniform search, pagination, validation, modal creation, and cached lookup resolution (`nameResolver.ts`).
+- **Universal Template & Validator Alignment**:
+  - Full bidirectional alignment between UI sample templates (`sampleTemplate.ts`), import parsers, validators, and backend models across all master modules.
+  - Automatic code auto-generation during import when `code` is omitted in the file (Brands: `BR-XXX`, Categories: `CAT-XXX`, Buyer Types: `BT-XXX`, Supplier Types: `ST-XXX`, UOM: derived from name/short name), aligning with UI forms that treat `code` as optional.
+  - Multi-alias column resolution supports all UI column labels (`Brand Name`, `Category Name`, `Sub-Category Name`, `Buyer Type Name`, `Supplier Type Name`, `Organization Name`, `Country Name`, `ISO Code`, `Province / Region Name`, `City Name`, `Currency Name`, `Currency Code (ISO 4217)`, `HSN Code`, `Refund VAT %`, `GST %`, `UOM Name`, `Short Name`).
+  - Resilient relational resolution: Sub-Categories, States, and Cities resolve linked parents by both code and name with case-insensitive fallback.
+  - Name-based deduplication (`dedupe_keys=("name",)`) ensures in-file duplicate prevention reflects the natural business identifier across all masters.
 
 ### 8.5. Product Catalog & Dynamic Specification Builder
 - **Endpoints:** `GET /masters/products`, `POST /masters/products`, `GET /masters/products/{id}`, `PATCH /masters/products/{id}`, `DELETE /masters/products/{id}`, `POST /masters/products/import`, `GET /masters/products/export`.
@@ -359,8 +365,15 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
 - **Dynamic Geography & Phone Dialing Code Sync:** When changing Country in the Supplier Profile (e.g., China &rarr; India), Province and City dropdowns reset automatically, and the country dialing code prefixes on Calling Number, WhatsApp Number, and WeChat Number auto-update dynamically (e.g., `+86 7304240120` &rarr; `+91 7304240120`).
 
 ### 8.7. Buyer & Client Management
-- **Endpoints:** `GET /buyers`, `POST /buyers`, `PATCH /buyers/{id}`, `POST /buyers/{id}/contacts`, `POST /buyers/{id}/addresses`.
+- **Endpoints:** `GET /buyers`, `POST /buyers`, `PATCH /buyers/{id}`, `DELETE /buyers/{id}`, `POST /buyers/import`, `GET /buyers/export`.
 - **Features:** Client directory with credit limits, client grades (A, B, C, Premium), multi-address delivery matrix (Billing, Shipping, Warehouse), and bulk import/export.
+- **True 3-Way Duplicate Detection (Note 66 in `buyerclient.txt`)**:
+  - Independent, multi-factor uniqueness checking across three distinct vectors: **Company Name**, **Calling Number**, and **WhatsApp Number**.
+  - **Company Name Uniqueness**: Case-insensitive exact match check is strictly enforced in `BuyerRepository.find_duplicate` and `BuyerService.import_file` even if phone numbers are omitted or different, ensuring company names cannot be duplicated.
+  - **Cross-Phone Collision Detection**: Strips non-digit characters and ensures phone numbers ($\ge 6$ digits) cannot collide with another buyer's primary calling number OR WhatsApp number (e.g. using an existing buyer's calling number as a WhatsApp number is immediately flagged and rejected).
+  - **Real-Time Client-Side Feedback**: Form inputs display live inline warning alerts (`⚠️ {fieldDuplicates.companyWarning}`, `⚠️ {fieldDuplicates.callingWarning}`, `⚠️ {fieldDuplicates.whatsappWarning}`) as the user types, blocking form submission if any duplicate is detected.
+  - **Safe Self-Update**: `exclude_id` ensures editing a buyer's existing profile does not trigger false-positive collisions against its own record.
+  - **In-File & Database Deduplication during Import**: Pre-scans batch records and cross-references existing database entries, rejecting intra-file and cross-database duplicates with clear comparative conflict details.
 
 ### 8.8. Inquiries, RFQs & AI Quotation Extractor
 - **Endpoints:** `GET /inquiries`, `POST /inquiries`, `POST /inquiries/{inquiry_id}/items/import`, `GET /inquiries/sample-template`, `POST /inquiries/{id}/rfq/dispatch`, `POST /inquiries/{id}/send-email-message`, `GET /inquiries/{id}/messages`, `POST /inquiries/{id}/quotes/manual`, `POST /inquiries/{id}/quotes/extract-pdf`, `POST /inquiries/{id}/convert-to-proforma`, `GET /inquiries/{id}/compare-matrix`.
@@ -467,7 +480,23 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
 **Files:** `frontend/src/components/ImportWizard.tsx`, `backend/app/common/importer.py`
 
 - **Workflow:** File Upload (.xlsx / .csv) $\rightarrow$ Header Fuzzy Matching $\rightarrow$ Column Mapping UI $\rightarrow$ Client-Side Validation $\rightarrow$ Transactional Batch Insertion $\rightarrow$ Error Log Report.
-- **Duplicate Prevention:** Validates existing database records by TIN, Email, Phone, or Code before commit.
+- **Duplicate Prevention Subsystem:**
+  - **Buyers (`/buyers/import`):** 3-way deduplication across sheet rows and active database records checking `Company Name` (case-insensitive), `Calling Number`, and `WhatsApp Number`.
+  - **Suppliers (`/suppliers/import`):** Company Name deduplication against active database records and in-file batches. Null-safe validation for state code comparisons (`s.code and s.code.lower() == state_raw.lower()`).
+  - **Products (`/masters/products/import`):** Strict dual-uniqueness on `Product Name` (Tally/Standard) and `Product Code` with automatic CBM calculation from `(L x W x H) / 1,000,000`.
+  - **Inquiries (`/inquiries/{id}/items/import`):** Matches line-items by Product Code, Product Name, or Tally Name against Product Master; automatically inherits UOM and license flags; updates consignment total CBM and gross weight rollups.
+  - **Master Data (`Categories`, `Brands`, `UOM`, `Buyer Types`, `HSN`):** Auto-generates missing code fields (`CAT-XXX`, `BR-XXX`, `BT-XXX`, `UOM-XXX`) from human-readable names and properly maps `Refund VAT %` on HSN imports.
+
+### 11.2. Verification Test Suite & Excel Test Workbooks (`testingimportfile/`)
+
+A dedicated set of 8 pre-built, styled Excel workbooks (`.xlsx`) is maintained in `testingimportfile/` for end-to-end import testing, duplicate conflict validation, and regression assurance across the 4 core business modules:
+
+| Module | New Data File (Clean Import) | Duplicate Data File (Conflict / Skip Verification) | Validation & Deduplication Rules Tested |
+| :--- | :--- | :--- | :--- |
+| **Supplier Master** | `supplier_new_data.xlsx` | `supplier_duplicate_data.xlsx` | Tests valid Country/State/City hierarchy, phone formats (7-15 digits), existing DB Company Name deduplication (`ConflictException`), and intra-file batch duplicates. |
+| **Buyer (Client) Master** | `buyer_new_data.xlsx` | `buyer_duplicate_data.xlsx` | Tests valid Buyer Types, Country/City mappings, Note 66 3-way deduplication across **Company Name**, **Calling Number**, and **WhatsApp Number** ($\ge 6$ clean digits), plus intra-batch collision rejection. |
+| **Product Master** | `product_new_data.xlsx` | `product_duplicate_data.xlsx` | Tests Category/Sub-Category parent-child linkage, valid UOM and HSN codes, required packaging dimensions (Gross Weight > 0, Pack. Qty > 0, CBM > 0), and dual-uniqueness on `Product Name` and `Product Code`. |
+| **Inquiry Line Items** | `inquiry_items_new_data.xlsx` | `inquiry_items_duplicate_data.xlsx` | Tests consignment line item import matching active Product Master items by SKU/Code or Name, status assignment (`Approved`/`Proposed`), duplicate item line detection, and invalid quantity/unmatched product error reporting. |
 
 ### 11.1. Media & File Storage Subsystem (Neon S3, Supabase & Local Disk Fallback)
 
@@ -633,6 +662,39 @@ When building new features, modifying endpoints, or merging external components 
 - ❌ **NEVER bypass permission dependencies**: Every private endpoint must specify `Depends(require_permission(...))`.
 - ❌ **NEVER alter database tables manually**: Keep all migrations version-controlled in `backend/alembic/versions/`.
 - ❌ **NEVER modify user permissions without invalidating cache**: Always call `cache_manager.invalidate_user_permissions(user_id)`.
+
+### 14.3. Git Pull & Remote Merge Invariant: Universal Bulk Import & Deduplication Engine
+
+Whenever pulling from remote branches or merging collaborative Git branches, the following **Universal Bulk Import & Deduplication Engine** rules represent verified, production-grade logic that must **NEVER** be regressed, deleted, or overwritten:
+
+1. **Buyer (Client) Master Deduplication (`backend/app/buyers/service.py`, `repository.py`)**:
+   - **Note 66 3-Way Deduplication**: Incoming rows are checked across `company_name` (case-insensitive trim), `contact_calling_number`, and `contact_whatsapp_number`.
+   - **Cross-Phone Protection**: Strips non-digit characters (`re.sub(r"\D", "", phone)`); if length $\ge 6$ digits, checks that a new calling number does not collide with ANY existing calling or WhatsApp number, and vice versa.
+   - **Batch Collision Guard**: Tracks `seen_in_batch` set; duplicate company names within the same upload are rejected with `ConflictException`.
+   - **Master Links**: Strict validation of `Buyer Type` (mapped to valid enum/master values), `Country`, and `Product Categories`.
+
+2. **Supplier Master Deduplication & Hierarchy Validation (`backend/app/suppliers/service.py`, `validators.py`)**:
+   - **Company Uniqueness**: Checks `company_name` against database (`existing_map`) and in-file batch duplicates.
+   - **Null-Safe State Resolution**: Validates state by country ID and matches name or code safely: `s.name.lower() == state_raw.lower() or (s.code and s.code.lower() == state_raw.lower())` (prevents `AttributeError` on `None` state codes).
+   - **Phone Digits Rule**: Calling, WhatsApp, and WeChat numbers must contain between 7 and 15 digits (including international country code prefix).
+   - **City / Province / Country & Category Hierarchy**: Every supplier row must resolve to an existing Country, State, and City in geography masters, and valid Category / Sub-Category links.
+
+3. **Product Master Dual-Uniqueness & Automated Dimensions (`backend/app/masters/products/service.py`, `validators.py`)**:
+   - **Dual Uniqueness**: Both `product_name` / `product_name_tally` and `product_code` are strictly unique across active products (`seen_names` and `seen_codes`).
+   - **Parent-Child Category Verification**: Sub-category is verified to belong to the chosen category (e.g. `Band sealing Machine` under `Machines`).
+   - **Packaging Computations**: Enforces `Pack. Qty > 0`, `Pack. Gross Weight > 0`, and automatically calculates `Pack. Unit CBM = (Length x Width x Height) / 1,000,000` if Length, Width, Height are supplied.
+
+4. **Inquiry Consignment Line Items Import (`backend/app/inquiries/service.py:import_items`)**:
+   - **Flexible Product Resolution**: Matches line items by `Product Code`, `Product Name`, or `product_name_tally` against Product Master.
+   - **Auto-Inheritance**: Automatically copies `uom_id` and `requires_license` flags from the resolved product; validates positive integer/float quantity.
+   - **Rollup Synchronization**: Calling `import_items` automatically invokes `_refresh_rollup` to recalculate total CBM, gross weight, item count, and proposed/approved totals.
+
+5. **Master Data ("Etc" General Masters) Code Auto-Generation**:
+   - Across all 12 master modules (Brands, Categories, Sub-Categories, UOM, Buyer Types, Supplier Types, Cities, Countries, States, HSN, Currencies, Company List), if the `Code` column is omitted from import sheets, a unique code slug (`CAT-XXX`, `BR-XXX`, `BT-XXX`, `UOM-XXX`) is automatically synthesized from the title/name.
+   - HSN Code validator strips percent signs/commas and correctly casts `Refund VAT %` to `float`.
+
+6. **Standard Verification Workbooks (`testingimportfile/`)**:
+   - Maintain the 8 reference Excel files in `testingimportfile/` (`*_new_data.xlsx` and `*_duplicate_data.xlsx`) as the definitive regression test suite. Any code merge touching import files must pass these 8 files with zero regressions.
 
 ---
 

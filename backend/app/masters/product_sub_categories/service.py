@@ -171,7 +171,7 @@ class ProductSubCategoryService:
             if category is None:
                 category = await self.category_repository.get_by_name(category_code)
             if category is None:
-                raise ValueError(f"Category '{category_code}' does not exist.")
+                raise BadRequestException(f"Category '{category_code}' does not exist.")
             field_values["category_id"] = category.id
 
             name = field_values["name"]

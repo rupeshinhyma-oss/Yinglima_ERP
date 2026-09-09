@@ -16,15 +16,30 @@ def validate_state_row(raw_row: dict[str, str], row_number: int) -> dict[str, An
     layer (which has DB access), not here -- this function is pure/DB-free
     so it can be unit-tested without a database.
     """
-    name = (raw_row.get("name") or "").strip()
-    country_code = (raw_row.get("country_code") or "").strip().upper()
+    name = (
+        raw_row.get("name")
+        or raw_row.get("Province / Region Name")
+        or raw_row.get("Province Name")
+        or raw_row.get("State Name")
+        or raw_row.get("state_name")
+        or raw_row.get("Province")
+        or raw_row.get("State")
+        or ""
+    ).strip()
+    country_code = (
+        raw_row.get("country_code")
+        or raw_row.get("Country Code")
+        or raw_row.get("Country")
+        or raw_row.get("country")
+        or ""
+    ).strip().upper()
 
     if not name:
-        raise BadRequestException(f"Row {row_number}: 'name' is required.")
+        raise BadRequestException(f"Row {row_number}: 'name' (Province / Region Name) is required.")
     if not country_code:
-        raise BadRequestException(f"Row {row_number}: 'country_code' is required.")
+        raise BadRequestException(f"Row {row_number}: 'country_code' (Country Code) is required.")
 
-    status_raw = (raw_row.get("status") or "active").strip().lower()
+    status_raw = (raw_row.get("status") or raw_row.get("Status") or "active").strip().lower()
     try:
         status = RecordStatus(status_raw)
     except ValueError as exc:
@@ -35,6 +50,6 @@ def validate_state_row(raw_row: dict[str, str], row_number: int) -> dict[str, An
     return {
         "name": name,
         "country_code": country_code,
-        "code": (raw_row.get("code") or "").strip() or None,
+        "code": (raw_row.get("code") or raw_row.get("Province Code") or raw_row.get("State Code") or "").strip() or None,
         "status": status,
     }

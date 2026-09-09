@@ -310,10 +310,29 @@ Manage complete vendor team directory:
 #### Tab 2: 📇 Contacts Management
 - Multi-contact person manager with full CRUD: Name, Salutation, Designation, Calling Number, WhatsApp Number, Email. Auto-synced with Primary Contact.
 
+### 5.4. Buyers Bulk Import Workspace & 3-Way Duplicate Detection
+- **Import View:** Dedicated full-page import workflow modeled on Supplier Import via `Imp / Exp ⌵` -> `Import`.
+- **Upload Support:** Drag-and-drop or file selector for `.xlsx`, `.xls`, and `.csv` files (up to 5,000 rows, 8 MB).
+- **Template Download:** Instant `📥 Download Sample CSV Template` button generating sample with all 23 business fields matching `doc/buyerclient.txt`.
+- **Wizard Modal:** 4-step wizard with auto-matched column headers, fuzzy synonyms, live preview, and chunked uploads.
+- **True 3-Way Duplicate Prevention (Note 66 in `buyerclient.txt`):**
+  - **In-File Duplicate Check:** Prevents duplicate company names in the same import file.
+  - **Company Name Uniqueness:** Strictly enforces case-insensitive uniqueness on `Company Name` against the database even when phone numbers are empty or different.
+  - **Phone Collision Detection:** Cross-checks `Calling Number` and `WhatsApp Number` against both phone fields of all existing buyers ($\ge 6$ digits, stripping non-digit characters).
+  - **Real-Time Client Warnings:** Inline field warning badges display live while typing in the Add/Edit form, blocking save if any of the three vectors collides.
+  - **Safe Self-Update:** `exclude_id` ensures updating an existing buyer does not trigger self-collision.
+
 ### Test Cases
 - [ ] Create Buyer with Company Name, Country, Calling Number, and save.
-- [ ] Verify duplicate alert pops up if saving a second buyer with the exact same phone number.
+- [ ] Attempt to create a second buyer with the same Company Name (even with different or empty phone numbers) and verify duplicate conflict is raised.
+- [ ] Attempt to create a buyer with a different Company Name but the same Calling Number or WhatsApp Number as an existing buyer, and verify duplicate conflict is raised with the conflicting buyer's name.
+- [ ] Attempt to use an existing buyer's Calling Number as a new buyer's WhatsApp Number, and verify cross-phone duplicate detection blocks it.
+- [ ] Edit an existing buyer without changing phone/name, save, and verify `exclude_id` allows save without self-duplicate conflict.
 - [ ] Verify deleting a buyer with status `Existing` or potential `Yes` is blocked by protection dialog.
+- [ ] Click `Imp / Exp ⌵` -> `Import` to open the dedicated Buyer Import workspace.
+- [ ] Download Sample CSV template and verify all 23 headers match `doc/buyerclient.txt`.
+- [ ] Upload sample file and verify 3-way duplicate check prevents duplicate company names or phone numbers.
+- [ ] Master Data Imports: Download sample CSV from each master module (Brands, Categories, Sub-Categories, Buyer Types, Supplier Types, UOM, HSN, Countries, States, Cities, Currencies, Company List), upload directly, and verify all rows import with 100% success and no header/code mismatches.
 
 ---
 
@@ -1089,6 +1108,73 @@ Checklist to execute:
    - Departments (/rbac) support optional short code and parent department nesting.
 6. Report any missing fields, broken endpoints, or regressions.
 ```
+
+---
+
+## 33. Universal Import & Deduplication Test Suite (`testingimportfile/`)
+
+A standardized suite of 8 production-grade Excel (`.xlsx`) files is maintained directly in `testingimportfile/` to allow developers and QA engineers to execute end-to-end import and duplicate-detection testing across the 4 core business modules:
+
+### 33.1. Supplier Master (`/suppliers`)
+- **Folder:** `testingimportfile/`
+- **File 1 (Clean Data):** `supplier_new_data.xlsx`
+  - **Rows:** 2 new supplier companies ("Hangzhou Precision Pack Machinery Co., Ltd.", "Apex Automation Systems Pvt. Ltd.")
+  - **Headers:** `Company Name`, `Product Categories`, `Key Strength Sub-Categories`, `Products Supplied`, `Secondary Products`, `Country`, `State / Province`, `City`, `Brand Description`, `Supplier Type`, `Current Status`, `Supplier Grade`, `Potential`, `Potential Reason`, `Contact Person`, `Designation`, `Calling Number`, `WhatsApp Number`, `WeChat Number`, `Emails`, `Tax ID / GST Number`, `Address`, `Town`, `Primary Website`, `Secondary Website`, `Visited Factory/Office`, `Visit Remarks`, `Overall Remarks`, `Status`.
+  - **Expected Result:** `created: 2, failed: 0`. Both suppliers created successfully and linked to their respective City/State/Country and Category/Sub-Category masters.
+- **File 2 (Duplicate / Conflict Data):** `supplier_duplicate_data.xlsx`
+  - **Rows:** 4 rows:
+    - Row 2: Existing Supplier "Yinglima Packaging Machinery Co., Ltd." (in Wenzhou, China).
+    - Row 3: Existing Supplier "Darsh Impex" (in Mumbai, India).
+    - Row 4: New company "Newtech Sealing Solutions Co., Ltd." (First entry in batch).
+    - Row 5: Same company "Newtech Sealing Solutions Co., Ltd." (Second entry in same batch).
+  - **Expected Result:** Rows 2 and 3 skipped/flagged as existing DB duplicates (`ConflictException`). Row 5 flagged as an in-file batch duplicate.
+
+### 33.2. Buyer (Client) Master (`/buyers`)
+- **Folder:** `testingimportfile/`
+- **File 1 (Clean Data):** `buyer_new_data.xlsx`
+  - **Rows:** 2 new buyers ("Zenith Food & Beverage Processing Ltd.", "Global Agro Industries Ltd.")
+  - **Headers:** `Company Name`, `Buyer Type`, `Product Categories`, `Product Sub Categories`, `Country`, `City`, `Address`, `Contact Salutation`, `Contact Person Name`, `Designation`, `Calling Number`, `WhatsApp Number`, `Emails`, `Tax ID / GST Number`, `Website`, `Current Status`, `Buyer Grade`, `Potential`, `Potential Reason`, `Product Range`, `Currently Buying From`, `Overall Remarks`, `Status`.
+  - **Expected Result:** `created: 2, failed: 0`. Clean import with full contact, salutation, category, and city linking.
+- **File 2 (Duplicate / Conflict Data):** `buyer_duplicate_data.xlsx`
+  - **Rows:** 5 rows testing Note 66 3-way deduplication:
+    - Row 2: "Darsh Impex" -> Triggers Duplicate Company Name collision.
+    - Row 3: "Sunrise FMCG Exports Pvt. Ltd." with Calling Number `+91 77384172578` -> Triggers Duplicate Calling Number collision.
+    - Row 4: "Horizon Pack Solutions LLP" with WhatsApp Number `+91 77384172578` -> Triggers Duplicate WhatsApp Number collision.
+    - Row 5: "Alpha Pack Industries" -> First entry in batch.
+    - Row 6: "Alpha Pack Industries" -> Second entry in batch -> Triggers in-file duplicate collision.
+  - **Expected Result:** 4 duplicate conflicts correctly captured and isolated; existing records protected from overwrite.
+
+### 33.3. Product Master (`/masters/products`)
+- **Folder:** `testingimportfile/`
+- **File 1 (Clean Data):** `product_new_data.xlsx`
+  - **Rows:** 3 new machine products ("High Speed Continuous Band Sealer Model CBS-900", "Semi-Automatic Carton Sealer Model FX-500", "Heavy Duty Liquid Piston Filling Machine 500ml").
+  - **Headers:** `Product Name (As Per Tally)`, `Product Code`, `Brand`, `Category`, `Sub Category`, `HSN Code`, `UOM`, `Organization`, `Branches`, `Pack. Qty`, `Pack. Net Weight`, `Pack. Gross Weight`, `Length (cm)`, `Width (cm)`, `Height (cm)`, `Pack. Unit CBM`, `Refund VAT %`, `Compliance & License Requirements`, `Specification`, `Status`.
+  - **Expected Result:** `created: 3, failed: 0`. All 3 products created with auto-calculated CBM and valid category-to-subcategory mapping.
+- **File 2 (Duplicate / Conflict Data):** `product_duplicate_data.xlsx`
+  - **Rows:** 4 rows:
+    - Row 2: Product Name "Ink Cup Set ( TDY 380C)" -> Triggers duplicate Product Name collision (existing code `DAR-01849`).
+    - Row 3: Product Code `DAR-01851` -> Triggers duplicate Product Code collision (existing product "Ink Roll (MY 380F)").
+    - Row 4: "Digital Ultrasonic Cleaner 30L Industrial" (Code `PRD-BATCH-DUP-01`) -> First entry in batch.
+    - Row 5: "Digital Ultrasonic Cleaner 30L Industrial" (Code `PRD-BATCH-DUP-02`) -> Triggers in-file duplicate Product Name collision.
+  - **Expected Result:** 3 duplicate conflicts captured and skipped; zero corruption of existing catalog.
+
+### 33.4. Inquiry Consignment Line Items (`/inquiries/{inquiry_id}/items`)
+- **Folder:** `testingimportfile/`
+- **File 1 (Clean Data):** `inquiry_items_new_data.xlsx`
+  - **Rows:** 4 valid line items referencing active Product Master items:
+    - Row 2: "Ink Cup Set ( TDY 380C)" (Code `DAR-01849`, Qty: 50, Status: Approved)
+    - Row 3: "Ink Roll (MY 380F)" (Code `DAR-01851`, Qty: 100, Status: Proposed)
+    - Row 4: "Mother Board for Handy and Printer" (Code `DAR-01852`, Qty: 20, Status: Approved)
+    - Row 5: "Motor (Tdy 380)" (Code `DAR-01853`, Qty: 15, Status: Proposed)
+  - **Headers:** `Product Name`, `Product Code`, `Quantity`, `UOM`, `Brand Preference`, `Product Specs / Remarks`, `Status`.
+  - **Expected Result:** `created: 4, failed: 0`. All 4 items imported into consignment with automatic UOM inheritance and consignment rollup calculation.
+- **File 2 (Duplicate & Validation Test Data):** `inquiry_items_duplicate_data.xlsx`
+  - **Rows:** 4 rows testing duplicate items and validation handling:
+    - Row 2: "Ink Cup Set ( TDY 380C)" (Qty: 50, Status: Approved) -> Initial entry.
+    - Row 3: "Ink Cup Set ( TDY 380C)" (Qty: 50, Status: Approved) -> Duplicate line item entry.
+    - Row 4: "Non-Existent Mystery Widget 999" (Code `NON-EXISTENT-SKU-999`) -> Triggers "Product not found in Product Master" failure.
+    - Row 5: "Motor (Tdy 380)" with Quantity `0` -> Triggers "Invalid quantity. Must be a positive number" failure.
+  - **Expected Result:** 2 valid rows imported; 2 invalid rows accurately flagged with exact row numbers and error descriptions.
 
 ---
 *End of Master Features & Testing Specification Manual. Maintained for Inhyma Solutions Enterprise ERP.*

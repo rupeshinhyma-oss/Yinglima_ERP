@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Select, and_, exists, or_, select
+from sqlalchemy import Select, and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.buyers.models import Buyer, BuyerCategoryLink, BuyerContact, BuyerEmail, BuyerSubCategoryLink
@@ -141,34 +141,68 @@ class BuyerRepository(BaseRepository[Buyer]):
         self,
         *,
         company_name: str,
-        calling_number: str | None,
-        whatsapp_number: str | None,
+        calling_number: str | None = None,
+        whatsapp_number: str | None = None,
         exclude_id: uuid.UUID | None = None,
-    ) -> Buyer | None:
+    ) -> tuple[Buyer, str] | None:
         """
-        Return the first non-deleted buyer matching the document's duplicate rule, if any.
+        Return the first non-deleted buyer matching the document's duplicate rule:
+        Note 66: "For detecting Duplication, Criteria is if matches with
+        Company Name, Calling Number and Whatsapp Number. (Currently showing 'it exists'
+        only for calling number, but also to do same for whatsapp number."
 
-        Document: "For detecting Duplication, Criteria is if matches with
-        Company Name, Calling Number and Whatsapp Number." Matching on
-        Company Name is case-insensitive and exact (the document does not
-        specify fuzzy matching); a match on either phone number field
-        alone (given the name also matches) counts as a duplicate, per
-        "Currently showing 'it exists' only for calling number, but also
-        to do same for whatsapp number."
+        Checks:
+        1. Exact case-insensitive Company Name match.
+        2. Calling Number match (against either calling or WhatsApp number of another buyer).
+        3. WhatsApp Number match (against either WhatsApp or calling number of another buyer).
         """
-        phone_conditions = []
-        if calling_number:
-            phone_conditions.append(Buyer.contact_calling_number == calling_number)
-        if whatsapp_number:
-            phone_conditions.append(Buyer.contact_whatsapp_number == whatsapp_number)
-        if not phone_conditions:
-            return None
+        import re
 
-        stmt = self._base_select().where(Buyer.company_name.ilike(company_name), or_(*phone_conditions))
-        if exclude_id is not None:
-            stmt = stmt.where(Buyer.id != exclude_id)
-        result = await self.session.execute(stmt)
-        return result.scalars().first()
+        clean_name = company_name.strip()
+        if clean_name:
+            stmt = self._base_select().where(func.lower(func.trim(Buyer.company_name)) == clean_name.lower())
+            if exclude_id is not None:
+                stmt = stmt.where(Buyer.id != exclude_id)
+            result = await self.session.execute(stmt)
+            b = result.scalars().first()
+            if b is not None:
+                return b, f"Company name '{clean_name}' already exists in Buyer Master"
+
+        clean_call = re.sub(r"\D", "", calling_number) if calling_number else ""
+        if clean_call and len(clean_call) >= 6:
+            stmt = self._base_select().where(
+                or_(
+                    Buyer.contact_calling_number == calling_number,
+                    Buyer.contact_whatsapp_number == calling_number,
+                    func.regexp_replace(func.coalesce(Buyer.contact_calling_number, ""), r"\D", "", "g") == clean_call,
+                    func.regexp_replace(func.coalesce(Buyer.contact_whatsapp_number, ""), r"\D", "", "g") == clean_call,
+                )
+            )
+            if exclude_id is not None:
+                stmt = stmt.where(Buyer.id != exclude_id)
+            result = await self.session.execute(stmt)
+            b = result.scalars().first()
+            if b is not None:
+                return b, f"Calling number '{calling_number}' already exists in Buyer Master (used by '{b.company_name}')"
+
+        clean_wa = re.sub(r"\D", "", whatsapp_number) if whatsapp_number else ""
+        if clean_wa and len(clean_wa) >= 6:
+            stmt = self._base_select().where(
+                or_(
+                    Buyer.contact_whatsapp_number == whatsapp_number,
+                    Buyer.contact_calling_number == whatsapp_number,
+                    func.regexp_replace(func.coalesce(Buyer.contact_whatsapp_number, ""), r"\D", "", "g") == clean_wa,
+                    func.regexp_replace(func.coalesce(Buyer.contact_calling_number, ""), r"\D", "", "g") == clean_wa,
+                )
+            )
+            if exclude_id is not None:
+                stmt = stmt.where(Buyer.id != exclude_id)
+            result = await self.session.execute(stmt)
+            b = result.scalars().first()
+            if b is not None:
+                return b, f"WhatsApp number '{whatsapp_number}' already exists in Buyer Master (used by '{b.company_name}')"
+
+        return None
 
     async def get_with_relations(self, buyer_id: uuid.UUID) -> Buyer | None:
         """Fetch a buyer by ID with its emails/contacts/category links eagerly loaded (all lazy='selectin')."""
