@@ -207,6 +207,16 @@ class BuyerService:
         )
         if dup_match is not None:
             duplicate, reason = dup_match
+            if hasattr(duplicate, "deleted_at") and duplicate.deleted_at is not None:
+                raise ConflictException(
+                    f"{reason} (currently in Trash).",
+                    details={
+                        "in_trash": True,
+                        "trash_id": str(duplicate.id),
+                        "entity_type": "Buyer",
+                        "name": duplicate.company_name,
+                    },
+                )
             raise ConflictException(f"{reason}.")
 
         buyer = await self.repository.create(**field_values)
@@ -260,6 +270,16 @@ class BuyerService:
             )
             if dup_match is not None:
                 duplicate, reason = dup_match
+                if hasattr(duplicate, "deleted_at") and duplicate.deleted_at is not None:
+                    raise ConflictException(
+                        f"{reason} (currently in Trash).",
+                        details={
+                            "in_trash": True,
+                            "trash_id": str(duplicate.id),
+                            "entity_type": "Buyer",
+                            "name": duplicate.company_name,
+                        },
+                    )
                 raise ConflictException(f"{reason}.")
 
         potential = field_values.get("potential", buyer.potential)

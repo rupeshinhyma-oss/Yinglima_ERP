@@ -61,22 +61,25 @@ class CompanyService:
         name = field_values.get("name")
         code = field_values.get("code")
 
-        if name:
-            clean_name = name.strip()
-            field_values["name"] = clean_name
-            existing = await self.repository.get_by_name(clean_name)
-            if existing is not None:
-                raise ConflictException(f"Company name {clean_name!r} is already in use.")
+        from app.common.trash_conflict import check_trash_or_duplicate, code_exists_anywhere
 
         if not code and name:
-            clean_code = "".join(c.upper() for c in field_values["name"] if c.isalnum())[:10]
+            clean_code = "".join(c.upper() for c in name if c.isalnum())[:10]
             code = f"CMP-{clean_code}" if clean_code else "CMP-GEN"
             counter = 1
             base_code = code
-            while await self.repository.get_by_code(code) is not None:
+            while await code_exists_anywhere(self.repository.session, MasterCompany, code):
                 code = f"{base_code}{counter}"
                 counter += 1
             field_values["code"] = code
+
+        await check_trash_or_duplicate(
+            self.repository.session,
+            MasterCompany,
+            entity_type="Company",
+            name=name,
+            code=code,
+        )
 
         company = await self.repository.create(**field_values)
         await self._invalidate_cache()
@@ -87,20 +90,16 @@ class CompanyService:
         company = await self.get_by_id_or_raise(company_id)
         name = field_values.get("name")
         code = field_values.get("code")
+        from app.common.trash_conflict import check_trash_or_duplicate
 
-        if name:
-            clean_name = name.strip()
-            field_values["name"] = clean_name
-            existing = await self.repository.get_by_name(clean_name)
-            if existing is not None and existing.id != company_id:
-                raise ConflictException(f"Company name {clean_name!r} is already in use.")
-
-        if code:
-            clean_code = code.strip()
-            field_values["code"] = clean_code
-            existing = await self.repository.get_by_code(clean_code)
-            if existing is not None and existing.id != company_id:
-                raise ConflictException(f"Company code {clean_code!r} is already in use.")
+        await check_trash_or_duplicate(
+            self.repository.session,
+            MasterCompany,
+            entity_type="Company",
+            name=name,
+            code=code,
+            exclude_id=company_id,
+        )
 
         changes = {k: v for k, v in field_values.items() if v is not None}
         if changes:

@@ -21,6 +21,7 @@ import { apiDelete, apiGet, apiPatch, apiPost, downloadExport, toQueryString } f
 import { useLiveModule } from "@/lib/live/useLive";
 import { useAuth, usePendingGuard } from "@/lib/hooks";
 import { autoTitleCase } from "@/utils/text";
+import { TrashConflictModal, type TrashConflictInfo } from "@/components/TrashConflictModal";
 import {
   ImpExpDropdown,
   ImportSummaryPanel,
@@ -6916,6 +6917,7 @@ function QuickInquiryDrawer({
 
   const [saving, setSaving] = useState(false);
   const [drawerError, setDrawerError] = useState<string | null>(null);
+  const [trashConflict, setTrashConflict] = useState<TrashConflictInfo | null>(null);
 
   const stampedDateStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
   const stampedUserName = String(profile?.full_name || profile?.username || "Rahul Patel");
@@ -7350,12 +7352,24 @@ function QuickInquiryDrawer({
 
       onSaved();
     } catch (err: any) {
+      if (err?.details?.in_trash) {
+        setTrashConflict({
+          ...err.details,
+          custom_action_label: "Restore & Append My Items",
+        });
+        return;
+      }
       const msg = err?.response?.data?.message || err?.message || "Failed to save inquiry. Please check the inputs.";
       setDrawerError(msg);
       onError(err);
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleTrashRestored = async () => {
+    setTrashConflict(null);
+    await handleSubmit("proposed");
   };
 
   return (
@@ -7637,6 +7651,13 @@ function QuickInquiryDrawer({
           </div>
         </div>
       </div>
+
+      <TrashConflictModal
+        isOpen={Boolean(trashConflict)}
+        conflictInfo={trashConflict}
+        onClose={() => setTrashConflict(null)}
+        onRestored={handleTrashRestored}
+      />
     </>
   );
 }

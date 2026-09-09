@@ -28,6 +28,7 @@ import { SearchableDropdown, SearchableDropdownMultiPanel, type DropdownOption }
 import { EmailTagInput, PhoneGroupField, SelectField, TextAreaField, TextField, WebsiteTagInput } from "@/components/fields";
 import { SideDrawer, DetailFieldGrid } from "@/components/SideDrawer";
 import { ItemPopoverCell } from "@/components/ItemPopoverCell";
+import { TrashConflictModal, type TrashConflictInfo } from "@/components/TrashConflictModal";
 import { ImpExpDropdown, BulkActionsDropdown, ImportSummaryPanel, downloadSampleCsv, parseFile, WizardModal, type SheetRow } from "@/components/ImportWizard";
 import { apiDelete, apiGet, apiPatch, apiPost, downloadExport, toQueryString } from "@/lib/api";
 import { useLookup, useLookupNames } from "@/lib/lookups";
@@ -484,6 +485,7 @@ export function BuyersPage() {
 
   /* Form & Tabs State */
   const [modalMode, setModalMode] = useState<ModalMode>(null);
+  const [trashConflict, setTrashConflict] = useState<TrashConflictInfo | null>(null);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const deepLinkBuyerId = searchParams.get("id");
@@ -1113,7 +1115,11 @@ export function BuyersPage() {
       }
       setError(null);
       setModalMode(null);
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.details?.in_trash) {
+        setTrashConflict(err.details);
+        return;
+      }
       setError(err);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } finally {
@@ -3373,6 +3379,17 @@ export function BuyersPage() {
             </div>
           </div>
         )}
+
+        <TrashConflictModal
+          isOpen={Boolean(trashConflict)}
+          conflictInfo={trashConflict}
+          onClose={() => setTrashConflict(null)}
+          onRestored={async () => {
+            setTrashConflict(null);
+            setModalMode(null);
+            reload();
+          }}
+        />
       </main>
     </AppShell>
   );

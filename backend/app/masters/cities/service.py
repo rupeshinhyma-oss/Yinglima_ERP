@@ -87,13 +87,15 @@ class CityService:
         country_id = field_values["country_id"]
         name = field_values.get("name")
         await self._validate_state_and_country(state_id, country_id)
-        if name:
-            existing = await self.repository.get_by_name_in_state(state_id, name)
-            if existing is not None:
-                raise ConflictException(
-                    f"City name {name!r} already exists in this state.",
-                    details={"existing": model_to_dict(existing)},
-                )
+        from app.common.trash_conflict import check_trash_or_duplicate
+
+        await check_trash_or_duplicate(
+            self.repository.session,
+            City,
+            entity_type="City",
+            name=name,
+            extra_filters={"state_id": state_id},
+        )
 
         city = await self.repository.create(**field_values)
         await self._invalidate_cache()
@@ -107,13 +109,16 @@ class CityService:
         name = field_values.get("name")
         if field_values.get("state_id") is not None or field_values.get("country_id") is not None:
             await self._validate_state_and_country(state_id, country_id)
-        if name:
-            existing = await self.repository.get_by_name_in_state(state_id, name, exclude_id=city_id)
-            if existing is not None:
-                raise ConflictException(
-                    f"City name {name!r} already exists in this state.",
-                    details={"existing": model_to_dict(existing)},
-                )
+        from app.common.trash_conflict import check_trash_or_duplicate
+
+        await check_trash_or_duplicate(
+            self.repository.session,
+            City,
+            entity_type="City",
+            name=name,
+            exclude_id=city_id,
+            extra_filters={"state_id": state_id},
+        )
 
         changes = {k: v for k, v in field_values.items() if v is not None}
         if changes:

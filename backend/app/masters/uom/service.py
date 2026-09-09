@@ -59,20 +59,18 @@ class UomService:
 
     async def create(self, **field_values: Any) -> UnitOfMeasurement:
         """Create a new UOM, validating name/code uniqueness."""
+        from app.common.trash_conflict import check_trash_or_duplicate
+
         name = field_values.get("name")
         code = field_values.get("code")
-        if name:
-            existing = await self.repository.get_by_name(name)
-            if existing is not None:
-                raise ConflictException(
-                    f"UOM name {name!r} is already in use.", details={"existing": model_to_dict(existing)}
-                )
-        if code:
-            existing = await self.repository.get_by_code(code)
-            if existing is not None:
-                raise ConflictException(
-                    f"UOM code {code!r} is already in use.", details={"existing": model_to_dict(existing)}
-                )
+
+        await check_trash_or_duplicate(
+            self.repository.session,
+            UnitOfMeasurement,
+            entity_type="UOM",
+            name=name,
+            code=code,
+        )
 
         uom = await self.repository.create(**field_values)
         await self._invalidate_cache()
@@ -80,21 +78,20 @@ class UomService:
 
     async def update(self, uom_id: uuid.UUID, **field_values: Any) -> UnitOfMeasurement:
         """Update an existing UOM, validating name/code uniqueness."""
+        from app.common.trash_conflict import check_trash_or_duplicate
+
         uom = await self.get_by_id_or_raise(uom_id)
         name = field_values.get("name")
         code = field_values.get("code")
-        if name:
-            existing = await self.repository.get_by_name(name, exclude_id=uom_id)
-            if existing is not None:
-                raise ConflictException(
-                    f"UOM name {name!r} is already in use.", details={"existing": model_to_dict(existing)}
-                )
-        if code:
-            existing = await self.repository.get_by_code(code)
-            if existing is not None and existing.id != uom_id:
-                raise ConflictException(
-                    f"UOM code {code!r} is already in use.", details={"existing": model_to_dict(existing)}
-                )
+
+        await check_trash_or_duplicate(
+            self.repository.session,
+            UnitOfMeasurement,
+            entity_type="UOM",
+            name=name,
+            code=code,
+            exclude_id=uom_id,
+        )
 
         changes = {k: v for k, v in field_values.items() if v is not None}
         if changes:

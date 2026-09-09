@@ -78,17 +78,20 @@ export class ApiError extends Error {
   errors: ApiFieldError[];
   /** Parsed `Retry-After` header (ms), if the server sent one (typically on 429). */
   retryAfterMs?: number;
+  details?: Record<string, any> | null;
 
   constructor(
     message: string,
     status: number,
     errors?: ApiFieldError[],
-    retryAfterHeader?: string | null
+    retryAfterHeader?: string | null,
+    details?: Record<string, any> | null
   ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.errors = errors || [];
+    this.details = details || (errors?.[0] as any)?.details || null;
     if (retryAfterHeader) {
       const seconds = Number(retryAfterHeader);
       if (!Number.isNaN(seconds) && seconds >= 0) {

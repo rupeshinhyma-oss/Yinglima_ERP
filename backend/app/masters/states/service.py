@@ -80,14 +80,18 @@ class StateService:
         """Create a new state, validating country existence and name uniqueness within it."""
         country_id = field_values["country_id"]
         name = field_values.get("name")
+        code = field_values.get("code")
         await self._validate_country(country_id)
-        if name:
-            existing = await self.repository.get_by_name_in_country(country_id, name)
-            if existing is not None:
-                raise ConflictException(
-                    f"State name {name!r} already exists in this country.",
-                    details={"existing": model_to_dict(existing)},
-                )
+        from app.common.trash_conflict import check_trash_or_duplicate
+
+        await check_trash_or_duplicate(
+            self.repository.session,
+            State,
+            entity_type="State",
+            name=name,
+            code=code,
+            extra_filters={"country_id": country_id},
+        )
 
         state = await self.repository.create(**field_values)
         await self._invalidate_cache()
@@ -98,15 +102,20 @@ class StateService:
         state = await self.get_by_id_or_raise(state_id)
         country_id = field_values.get("country_id") or state.country_id
         name = field_values.get("name")
+        code = field_values.get("code")
         if field_values.get("country_id") is not None:
             await self._validate_country(country_id)
-        if name:
-            existing = await self.repository.get_by_name_in_country(country_id, name, exclude_id=state_id)
-            if existing is not None:
-                raise ConflictException(
-                    f"State name {name!r} already exists in this country.",
-                    details={"existing": model_to_dict(existing)},
-                )
+        from app.common.trash_conflict import check_trash_or_duplicate
+
+        await check_trash_or_duplicate(
+            self.repository.session,
+            State,
+            entity_type="State",
+            name=name,
+            code=code,
+            exclude_id=state_id,
+            extra_filters={"country_id": country_id},
+        )
 
         changes = {k: v for k, v in field_values.items() if v is not None}
         if changes:

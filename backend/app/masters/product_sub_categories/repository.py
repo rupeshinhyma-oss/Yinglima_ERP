@@ -63,6 +63,20 @@ class ProductSubCategoryRepository(BaseRepository[ProductSubCategory]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_any_by_name_in_category(
+        self, category_id: uuid.UUID, name: str, *, exclude_id: uuid.UUID | None = None
+    ) -> ProductSubCategory | None:
+        """Fetch the sub-category in this category with this name regardless of soft-delete state."""
+        from sqlalchemy import func, select
+        stmt = select(ProductSubCategory).where(
+            ProductSubCategory.category_id == category_id,
+            func.lower(func.trim(ProductSubCategory.name)) == name.strip().lower(),
+        )
+        if exclude_id is not None:
+            stmt = stmt.where(ProductSubCategory.id != exclude_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def list_all(self) -> list[ProductSubCategory]:
         """Return every non-deleted sub-category, ordered by name."""
         stmt = self._base_select().order_by(ProductSubCategory.name)

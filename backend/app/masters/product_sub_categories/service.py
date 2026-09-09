@@ -79,6 +79,8 @@ class ProductSubCategoryService:
 
     async def create(self, **field_values: Any) -> ProductSubCategory:
         """Create a new sub-category, validating category existence, code, and name uniqueness."""
+        from app.common.trash_conflict import check_trash_or_duplicate, code_exists_anywhere
+
         category_id = field_values["category_id"]
         code = field_values.get("code")
         name = field_values.get("name")
@@ -88,20 +90,33 @@ class ProductSubCategoryService:
             base_code = "-".join(filter(None, clean_name.split("-")))[:45] or "SUB-CAT"
             code = base_code
             counter = 1
-            while await self.repository.get_by_code(code):
+            while await code_exists_anywhere(self.repository.session, ProductSubCategory, code):
                 code = f"{base_code}-{counter}"
                 counter += 1
             field_values["code"] = code
 
         if code:
-            existing = await self.repository.get_by_code(code)
-            if existing is not None:
-                raise ConflictException(
-                    f"Sub-category code {code!r} is already in use.", details={"existing": model_to_dict(existing)}
-                )
+            await check_trash_or_duplicate(
+                self.repository.session,
+                ProductSubCategory,
+                entity_type="SubCategory",
+                code=code,
+            )
+
         if name:
-            existing = await self.repository.get_by_name_in_category(category_id, name)
+            existing = await self.repository.get_any_by_name_in_category(category_id, name)
             if existing is not None:
+                if existing.deleted_at is not None:
+                    raise ConflictException(
+                        f"Sub-category '{name}' in this category already exists in the Trash.",
+                        details={
+                            "in_trash": True,
+                            "trash_id": str(existing.id),
+                            "entity_type": "SubCategory",
+                            "name": existing.name,
+                            "code": existing.code,
+                        },
+                    )
                 raise ConflictException(
                     f"Sub-category name {name!r} already exists in this category.",
                     details={"existing": model_to_dict(existing)},
@@ -113,6 +128,8 @@ class ProductSubCategoryService:
 
     async def update(self, sub_category_id: uuid.UUID, **field_values: Any) -> ProductSubCategory:
         """Update an existing sub-category, validating category existence, code, and name uniqueness."""
+        from app.common.trash_conflict import check_trash_or_duplicate
+
         sub_category = await self.get_by_id_or_raise(sub_category_id)
         category_id = field_values.get("category_id") or sub_category.category_id
         code = field_values.get("code")
@@ -120,14 +137,27 @@ class ProductSubCategoryService:
         if field_values.get("category_id") is not None:
             await self._validate_category(category_id)
         if code:
-            existing = await self.repository.get_by_code(code)
-            if existing is not None and existing.id != sub_category_id:
-                raise ConflictException(
-                    f"Sub-category code {code!r} is already in use.", details={"existing": model_to_dict(existing)}
-                )
+            await check_trash_or_duplicate(
+                self.repository.session,
+                ProductSubCategory,
+                entity_type="SubCategory",
+                code=code,
+                exclude_id=sub_category_id,
+            )
         if name:
-            existing = await self.repository.get_by_name_in_category(category_id, name, exclude_id=sub_category_id)
+            existing = await self.repository.get_any_by_name_in_category(category_id, name, exclude_id=sub_category_id)
             if existing is not None:
+                if existing.deleted_at is not None:
+                    raise ConflictException(
+                        f"Sub-category '{name}' in this category already exists in the Trash.",
+                        details={
+                            "in_trash": True,
+                            "trash_id": str(existing.id),
+                            "entity_type": "SubCategory",
+                            "name": existing.name,
+                            "code": existing.code,
+                        },
+                    )
                 raise ConflictException(
                     f"Sub-category name {name!r} already exists in this category.",
                     details={"existing": model_to_dict(existing)},

@@ -39,6 +39,11 @@ class ConsignmentCodeRepository(BaseRepository[ConsignmentCode]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_any_by_code(self, code: str) -> ConsignmentCode | None:
+        stmt = select(ConsignmentCode).where(func.lower(func.trim(ConsignmentCode.code)) == code.strip().lower())
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
     async def list_for_buyer(self, buyer_id: uuid.UUID) -> list[ConsignmentCode]:
         """Return every active consignment code belonging to one buyer (for the create-inquiry dropdown)."""
         stmt = self._base_select().where(ConsignmentCode.buyer_id == buyer_id).order_by(ConsignmentCode.code)
@@ -64,6 +69,14 @@ class InquiryRepository(BaseRepository[Inquiry]):
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_any_by_buyer_and_code(self, buyer_id: uuid.UUID, consignment_code_id: uuid.UUID) -> Inquiry | None:
+        stmt = select(Inquiry).where(
+            Inquiry.buyer_id == buyer_id,
+            Inquiry.consignment_code_id == consignment_code_id,
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
 
     async def list_for_buyer(self, buyer_id: uuid.UUID) -> list[Inquiry]:
         """Return every consignment for one buyer (Layer 1, scoped to a single company)."""

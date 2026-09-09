@@ -36,6 +36,7 @@ import {
 } from "./ImportWizard";
 import { SideDrawer, DetailFieldGrid, type DetailField } from "./SideDrawer";
 import { Breadcrumb } from "./Breadcrumb";
+import { TrashConflictModal, type TrashConflictInfo } from "./TrashConflictModal";
 import {
   apiDelete,
   apiGet,
@@ -558,6 +559,7 @@ export function MasterPage<T extends MasterRecord>({
   const [statusFilter, setStatusFilter] = useState("active");
   const [filterOpen, setFilterOpen] = useState(false);
   const [reloadCounter, setReloadCounter] = useState(0);
+  const [trashConflict, setTrashConflict] = useState<TrashConflictInfo | null>(null);
   const storageKey = `master_pinned_cols_${entityName}`;
   const [pinnedCols, setPinnedCols] = useState<Record<number, "left" | "right">>(() => {
     const saved = localStorage.getItem(storageKey);
@@ -1174,7 +1176,11 @@ export function MasterPage<T extends MasterRecord>({
       setAlertPopup(null);
       setValidationErrors({});
       closeModal();
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.details?.in_trash) {
+        setTrashConflict(err.details);
+        return;
+      }
       triggerAlert(err);
     } finally {
       setSubmitting(false);
@@ -2472,6 +2478,17 @@ export function MasterPage<T extends MasterRecord>({
         title={alertPopup?.title}
         message={alertPopup?.message || ""}
         onClose={() => setAlertPopup(null)}
+      />
+
+      <TrashConflictModal
+        isOpen={Boolean(trashConflict)}
+        conflictInfo={trashConflict}
+        onClose={() => setTrashConflict(null)}
+        onRestored={async () => {
+          closeModal();
+          setTrashConflict(null);
+          reload();
+        }}
       />
     </AppShell>
   );

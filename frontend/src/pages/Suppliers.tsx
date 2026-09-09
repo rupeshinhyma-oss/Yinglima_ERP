@@ -21,6 +21,7 @@ import { Breadcrumb } from "@/components/Breadcrumb";
 import { Banner, ModalAlert, TableMessageRow } from "@/components/ui";
 import { SideDrawer, DetailFieldGrid } from "@/components/SideDrawer";
 import { Pagination } from "@/components/Pagination";
+import { TrashConflictModal, type TrashConflictInfo } from "@/components/TrashConflictModal";
 import { ItemPopoverCell, TextPopoverCell } from "@/components/ItemPopoverCell";
 import { ImpExpDropdown, BulkActionsDropdown, ImportSummaryPanel, downloadSampleCsv, parseFile, WizardModal, type SheetRow } from "@/components/ImportWizard";
 import {
@@ -612,6 +613,7 @@ export function SuppliersPage() {
 
   /* Modal state */
   const [modalOpen, setModalOpen] = useState(false);
+  const [trashConflict, setTrashConflict] = useState<TrashConflictInfo | null>(null);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const deepLinkSupplierId = searchParams.get("id");
@@ -1701,7 +1703,11 @@ export function SuppliersPage() {
         setModalTab(nextAction);
       }
       return true;
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.details?.in_trash) {
+        setTrashConflict(err.details);
+        return false;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
       const lower = msg.toLowerCase();
@@ -4398,6 +4404,17 @@ export function SuppliersPage() {
           </div>
         </SideDrawer>
       )}
+
+      <TrashConflictModal
+        isOpen={Boolean(trashConflict)}
+        conflictInfo={trashConflict}
+        onClose={() => setTrashConflict(null)}
+        onRestored={async () => {
+          setTrashConflict(null);
+          closeModal();
+          reload();
+        }}
+      />
     </AppShell>
   );
 }

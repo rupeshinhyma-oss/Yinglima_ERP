@@ -160,7 +160,7 @@ class BuyerRepository(BaseRepository[Buyer]):
 
         clean_name = company_name.strip()
         if clean_name:
-            stmt = self._base_select().where(func.lower(func.trim(Buyer.company_name)) == clean_name.lower())
+            stmt = select(Buyer).where(func.lower(func.trim(Buyer.company_name)) == clean_name.lower())
             if exclude_id is not None:
                 stmt = stmt.where(Buyer.id != exclude_id)
             result = await self.session.execute(stmt)
@@ -170,7 +170,7 @@ class BuyerRepository(BaseRepository[Buyer]):
 
         clean_call = re.sub(r"\D", "", calling_number) if calling_number else ""
         if clean_call and len(clean_call) >= 6:
-            stmt = self._base_select().where(
+            stmt = select(Buyer).where(
                 or_(
                     Buyer.contact_calling_number == calling_number,
                     Buyer.contact_whatsapp_number == calling_number,
@@ -187,7 +187,7 @@ class BuyerRepository(BaseRepository[Buyer]):
 
         clean_wa = re.sub(r"\D", "", whatsapp_number) if whatsapp_number else ""
         if clean_wa and len(clean_wa) >= 6:
-            stmt = self._base_select().where(
+            stmt = select(Buyer).where(
                 or_(
                     Buyer.contact_whatsapp_number == whatsapp_number,
                     Buyer.contact_calling_number == whatsapp_number,

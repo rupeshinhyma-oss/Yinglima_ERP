@@ -59,6 +59,8 @@ class ProductCategoryService:
 
     async def create(self, **field_values: Any) -> ProductCategory:
         """Create a new category, validating name/code uniqueness."""
+        from app.common.trash_conflict import check_trash_or_duplicate, code_exists_anywhere
+
         name = field_values.get("name")
         code = field_values.get("code")
 
@@ -67,23 +69,18 @@ class ProductCategoryService:
             code = f"CAT-{clean_name}" if clean_name else "CAT-GEN"
             counter = 1
             base_code = code
-            while await self.repository.get_by_code(code) is not None:
+            while await code_exists_anywhere(self.repository.session, ProductCategory, code):
                 code = f"{base_code}{counter}"
                 counter += 1
             field_values["code"] = code
 
-        if name:
-            existing = await self.repository.get_by_name(name)
-            if existing is not None:
-                raise ConflictException(
-                    f"Category name {name!r} is already in use.", details={"existing": model_to_dict(existing)}
-                )
-        if code:
-            existing = await self.repository.get_by_code(code)
-            if existing is not None:
-                raise ConflictException(
-                    f"Category code {code!r} is already in use.", details={"existing": model_to_dict(existing)}
-                )
+        await check_trash_or_duplicate(
+            self.repository.session,
+            ProductCategory,
+            entity_type="Category",
+            name=name,
+            code=code,
+        )
 
         category = await self.repository.create(**field_values)
         await self._invalidate_cache()
@@ -91,21 +88,20 @@ class ProductCategoryService:
 
     async def update(self, category_id: uuid.UUID, **field_values: Any) -> ProductCategory:
         """Update an existing category, validating name/code uniqueness."""
+        from app.common.trash_conflict import check_trash_or_duplicate
+
         category = await self.get_by_id_or_raise(category_id)
         name = field_values.get("name")
         code = field_values.get("code")
-        if name:
-            existing = await self.repository.get_by_name(name, exclude_id=category_id)
-            if existing is not None:
-                raise ConflictException(
-                    f"Category name {name!r} is already in use.", details={"existing": model_to_dict(existing)}
-                )
-        if code:
-            existing = await self.repository.get_by_code(code)
-            if existing is not None and existing.id != category_id:
-                raise ConflictException(
-                    f"Category code {code!r} is already in use.", details={"existing": model_to_dict(existing)}
-                )
+
+        await check_trash_or_duplicate(
+            self.repository.session,
+            ProductCategory,
+            entity_type="Category",
+            name=name,
+            code=code,
+            exclude_id=category_id,
+        )
 
         changes = {k: v for k, v in field_values.items() if v is not None}
         if changes:

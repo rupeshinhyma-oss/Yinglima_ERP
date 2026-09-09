@@ -228,6 +228,26 @@ class SupplierRepository(BaseRepository[Supplier]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_any_by_name_city(
+        self, company_name: str, city_id: uuid.UUID, *, exclude_id: uuid.UUID | None = None
+    ) -> Supplier | None:
+        """Fetch the supplier matching this Company Name + City regardless of soft-delete state."""
+        stmt = select(Supplier).where(Supplier.city_id == city_id, Supplier.company_name.ilike(company_name))
+        if exclude_id is not None:
+            stmt = stmt.where(Supplier.id != exclude_id)
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
+    async def get_any_by_company_name(
+        self, company_name: str, *, exclude_id: uuid.UUID | None = None
+    ) -> Supplier | None:
+        """Fetch the supplier matching this Company Name regardless of soft-delete state."""
+        stmt = select(Supplier).where(func.lower(func.trim(Supplier.company_name)) == company_name.strip().lower())
+        if exclude_id is not None:
+            stmt = stmt.where(Supplier.id != exclude_id)
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
     async def get_with_relations(self, supplier_id: uuid.UUID) -> Supplier | None:
         """Fetch a supplier by ID with its emails/contacts/category links eagerly loaded."""
         # emails/contacts/category_links/sub_category_links are all

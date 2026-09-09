@@ -56,22 +56,25 @@ class SupplierTypeService:
         name = field_values.get("name")
         code = field_values.get("code")
 
+        from app.common.trash_conflict import check_trash_or_duplicate, code_exists_anywhere
+
         if not code and name:
             clean_name = "".join(c.upper() for c in name if c.isalnum())[:10]
             code = f"ST-{clean_name}" if clean_name else "ST-GEN"
             counter = 1
             base_code = code
-            while await self.repository.get_by_code(code) is not None:
+            while await code_exists_anywhere(self.repository.session, SupplierType, code):
                 code = f"{base_code}{counter}"
                 counter += 1
             field_values["code"] = code
 
-        if name:
-            existing = await self.repository.get_by_name(name)
-            if existing is not None:
-                raise ConflictException(
-                    f"Supplier type name {name!r} is already in use.", details={"existing": model_to_dict(existing)}
-                )
+        await check_trash_or_duplicate(
+            self.repository.session,
+            SupplierType,
+            entity_type="Supplier Type",
+            name=name,
+            code=code,
+        )
 
         item = await self.repository.create(**field_values)
         await self._invalidate_cache()
@@ -81,12 +84,16 @@ class SupplierTypeService:
         item = await self.get_by_id_or_raise(supplier_type_id)
         name = field_values.get("name")
         code = field_values.get("code")
-        if name:
-            existing = await self.repository.get_by_name(name, exclude_id=supplier_type_id)
-            if existing is not None:
-                raise ConflictException(
-                    f"Supplier type name {name!r} is already in use.", details={"existing": model_to_dict(existing)}
-                )
+        from app.common.trash_conflict import check_trash_or_duplicate
+
+        await check_trash_or_duplicate(
+            self.repository.session,
+            SupplierType,
+            entity_type="Supplier Type",
+            name=name,
+            code=code,
+            exclude_id=supplier_type_id,
+        )
 
         changes = {k: v for k, v in field_values.items() if v is not None}
         if changes:

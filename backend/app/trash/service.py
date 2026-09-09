@@ -178,6 +178,12 @@ class TrashService:
 
         row.deleted_at = None
         await self.db.flush()
+        try:
+            from app.cache.dependency import get_cache_manager
+            cache = get_cache_manager()
+            await cache.invalidate_dropdown()
+        except Exception:
+            pass
         return True
 
     async def hard_delete_item(self, entity_type: str, item_id: str) -> bool:

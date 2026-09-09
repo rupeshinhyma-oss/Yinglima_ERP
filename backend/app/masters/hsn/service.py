@@ -59,13 +59,16 @@ class HsnService:
 
     async def create(self, **field_values: Any) -> HsnCode:
         """Create a new HSN code, validating code uniqueness."""
+        from app.common.trash_conflict import check_trash_or_duplicate
+
         code = field_values.get("code")
         if code:
-            existing = await self.repository.get_by_code(code)
-            if existing is not None:
-                raise ConflictException(
-                    f"HSN code {code!r} is already in use.", details={"existing": model_to_dict(existing)}
-                )
+            await check_trash_or_duplicate(
+                self.repository.session,
+                HsnCode,
+                entity_type="HSN Code",
+                code=code,
+            )
 
         hsn = await self.repository.create(**field_values)
         await self._invalidate_cache()
@@ -73,14 +76,18 @@ class HsnService:
 
     async def update(self, hsn_id: uuid.UUID, **field_values: Any) -> HsnCode:
         """Update an existing HSN code, validating code uniqueness."""
+        from app.common.trash_conflict import check_trash_or_duplicate
+
         hsn = await self.get_by_id_or_raise(hsn_id)
         code = field_values.get("code")
         if code:
-            existing = await self.repository.get_by_code(code)
-            if existing is not None and existing.id != hsn_id:
-                raise ConflictException(
-                    f"HSN code {code!r} is already in use.", details={"existing": model_to_dict(existing)}
-                )
+            await check_trash_or_duplicate(
+                self.repository.session,
+                HsnCode,
+                entity_type="HSN Code",
+                code=code,
+                exclude_id=hsn_id,
+            )
 
         changes = {k: v for k, v in field_values.items() if v is not None}
         if changes:

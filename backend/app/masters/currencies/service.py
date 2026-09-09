@@ -61,18 +61,15 @@ class CurrencyService:
         """Create a new currency, validating name/code uniqueness."""
         name = field_values.get("name")
         code = field_values.get("code")
-        if name:
-            existing = await self.repository.get_by_name(name)
-            if existing is not None:
-                raise ConflictException(
-                    f"Currency name {name!r} is already in use.", details={"existing": model_to_dict(existing)}
-                )
-        if code:
-            existing = await self.repository.get_by_code(code)
-            if existing is not None:
-                raise ConflictException(
-                    f"Currency code {code!r} is already in use.", details={"existing": model_to_dict(existing)}
-                )
+        from app.common.trash_conflict import check_trash_or_duplicate
+
+        await check_trash_or_duplicate(
+            self.repository.session,
+            Currency,
+            entity_type="Currency",
+            name=name,
+            code=code,
+        )
 
         currency = await self.repository.create(**field_values)
         await self._invalidate_cache()
@@ -83,18 +80,16 @@ class CurrencyService:
         currency = await self.get_by_id_or_raise(currency_id)
         name = field_values.get("name")
         code = field_values.get("code")
-        if name:
-            existing = await self.repository.get_by_name(name, exclude_id=currency_id)
-            if existing is not None:
-                raise ConflictException(
-                    f"Currency name {name!r} is already in use.", details={"existing": model_to_dict(existing)}
-                )
-        if code:
-            existing = await self.repository.get_by_code(code)
-            if existing is not None and existing.id != currency_id:
-                raise ConflictException(
-                    f"Currency code {code!r} is already in use.", details={"existing": model_to_dict(existing)}
-                )
+        from app.common.trash_conflict import check_trash_or_duplicate
+
+        await check_trash_or_duplicate(
+            self.repository.session,
+            Currency,
+            entity_type="Currency",
+            name=name,
+            code=code,
+            exclude_id=currency_id,
+        )
 
         changes = {k: v for k, v in field_values.items() if v is not None}
         if changes:

@@ -269,12 +269,22 @@ class SupplierService:
             field_values.get("visited_factory_office", False), field_values.get("visit_remarks")
         )
 
-        if await self.repository.name_city_exists(company_name, city_id):
-            existing = await self.repository.get_by_name_city(company_name, city_id)
+        existing_match = await self.repository.get_any_by_name_city(company_name, city_id)
+        if existing_match is not None:
+            if existing_match.deleted_at is not None:
+                raise ConflictException(
+                    f"Supplier '{company_name}' already exists in the Trash.",
+                    details={
+                        "in_trash": True,
+                        "trash_id": str(existing_match.id),
+                        "entity_type": "Supplier",
+                        "name": existing_match.company_name,
+                    },
+                )
             raise ConflictException(
                 f"A supplier named {company_name!r} already exists in this city (duplicate check: "
                 "Company Name + City).",
-                details={"existing": model_to_dict(existing) if existing else None},
+                details={"existing": model_to_dict(existing_match)},
             )
 
         supplier = await self.repository.create(**field_values)
@@ -330,14 +340,24 @@ class SupplierService:
         new_company_name = field_values.get("company_name") or supplier.company_name
         new_city_id = field_values.get("city_id") or supplier.city_id
         if field_values.get("company_name") is not None or field_values.get("city_id") is not None:
-            if await self.repository.name_city_exists(new_company_name, new_city_id, exclude_id=supplier_id):
-                existing = await self.repository.get_by_name_city(
-                    new_company_name, new_city_id, exclude_id=supplier_id
-                )
+            existing_match = await self.repository.get_any_by_name_city(
+                new_company_name, new_city_id, exclude_id=supplier_id
+            )
+            if existing_match is not None:
+                if existing_match.deleted_at is not None:
+                    raise ConflictException(
+                        f"Supplier '{new_company_name}' already exists in the Trash.",
+                        details={
+                            "in_trash": True,
+                            "trash_id": str(existing_match.id),
+                            "entity_type": "Supplier",
+                            "name": existing_match.company_name,
+                        },
+                    )
                 raise ConflictException(
                     f"A supplier named {new_company_name!r} already exists in this city "
                     "(duplicate check: Company Name + City).",
-                    details={"existing": model_to_dict(existing) if existing else None},
+                    details={"existing": model_to_dict(existing_match)},
                 )
 
         visited = field_values.get("visited_factory_office")

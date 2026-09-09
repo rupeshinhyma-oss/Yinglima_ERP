@@ -1,7 +1,7 @@
 # Enterprise ERP System — Unified Architecture, Feature & Technical Manual
 
 > **System Version:** 1.1.0 (Production)  
-> **Last Updated:** September 9, 2026 (Universal Bulk Import & Deduplication Engine protected for remote Git merges; 8-file verification test suite added to testingimportfile/)  
+> **Last Updated:** September 9, 2026 (Universal Trash Conflict Detection & 1-Click Restore Engine across all Masters, Suppliers, Buyers, Products, and Inquiries; zero form data loss)  
 > **Repository:** `https://github.com/rupeshinhyma-oss/Yinglima_ERP.git`  
 > **Architectural Pattern:** Modular Async Monolith (FastAPI) + React 18 SPA (Vite) + Real-Time WebSocket Event Bus  
 > **Target Audience:** Systems Architects, Software Engineers, DevOps, and Autonomous AI Coding Assistants.  
@@ -422,8 +422,18 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
 - **Features:** Immutable audit repository capturing actor, IP, timestamp, action type, and field-level before/after JSON delta diffs across all business entities.
 
 ### 8.12. Recycle Bin (Universal Soft-Delete & Recovery)
-- **Endpoints:** `GET /trash`, `POST /trash/{entity_type}/{id}/restore`, `DELETE /trash/{entity_type}/{id}/purge`.
+- **Endpoints:** `GET /trash`, `POST /trash/restore`, `POST /trash/permanent-delete`, `POST /trash/empty`.
 - **Features:** Centralized Recycle Bin displaying soft-deleted records across all tables. One-click recovery restores records with full relational integrity. Permanent purge is restricted to Super Administrators.
+- **Trash Conflict Detection & One-Click Restore Engine (`backend/app/common/trash_conflict.py`, `TrashConflictModal.tsx`):**
+  - **Problem Solved:** When a record (e.g. Category `Test 1`) is soft-deleted, it retains its unique database constraints in PostgreSQL. If a user later attempts to create or rename an active record with that same name or code, standard repository queries (which filter `deleted_at IS NULL`) would return `None`, allowing the service to attempt an `INSERT`. This caused PostgreSQL to throw an `IntegrityError` (`UniqueViolationError`), which FastAPI's catch-all handler reported to the user as an unhandled 500 error: *"An unexpected error occurred."*
+  - **Application-Level Pre-Check (`check_trash_or_duplicate`):** Service `create()` and `update()` methods across all 12 Master Data catalogs (Categories, Sub-Categories, Brands, UOM, HSN, Countries, States, Cities, Currencies, Supplier Types, Buyer Types, Companies), Products, Buyers, Suppliers, and Inquiries perform an unfiltered table lookup before saving.
+  - **Structured Error Details:** If a match is found with `deleted_at IS NOT NULL`, the backend raises `ConflictException` with structured details: `{ "in_trash": True, "trash_id": "<uuid>", "entity_type": "<Entity>", "name": "<Name>", "code": "<Code>" }`. If an active conflict exists, it raises standard 409 Conflict.
+  - **Collision-Free Code Generators (`code_exists_anywhere`):** Code slugs (`CAT-XXX`, `BR-XXX`, `ST-XXX`, `CMP-XXX`) check both active and soft-deleted records so auto-increments never collide with soft-deleted slugs.
+  - **Interactive Frontend Modal (`TrashConflictModal.tsx`):**
+    - Surfaced across all Master pages (`MasterPage.tsx`), Product Master, Buyer Management (`Buyers.tsx`), Supplier Directory (`Suppliers.tsx`), and Quick Inquiry Drawer (`Inquiries.tsx`).
+    - **1-Click Restore Action:** Calls `POST /api/v1/trash/restore`, restores the item, invalidates the global dropdown cache via `cache_manager.invalidate_dropdown()`, refreshes the active list, and smoothly closes the modal.
+    - **Zero Form Loss Guarantee:** If the user clicks `[ Change Name / Cancel ]`, the conflict modal dismisses while leaving the user's active creation/edit form completely open with all form fields, tags, and item rows preserved.
+    - **Inquiry Workflow Integration:** In `QuickInquiryDrawer`, if a consignment code exists in Trash, the modal offers `[ 🔄 Restore & Append My Items ]`, automatically restoring the consignment and appending newly specified line items into it without losing any of the user's inputs.
 
 ### 8.13. Organization & System Profile
 - **Endpoints:** `GET /organizations/profile`, `PATCH /organizations/profile`.

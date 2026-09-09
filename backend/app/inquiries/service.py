@@ -94,7 +94,26 @@ class InquiryService:
             raise BadRequestException("Consignment code is required.")
         if await self.buyer_repository.get_by_id(buyer_id) is None:
             raise BadRequestException("The specified buyer does not exist.")
-        if await self.consignment_code_repository.get_by_code(code):
+        existing_code = await self.consignment_code_repository.get_any_by_code(code)
+        if existing_code is not None:
+            if existing_code.deleted_at is not None:
+                if existing_code.buyer_id == buyer_id:
+                    # Same buyer owns this deleted code: restore it and update label if needed!
+                    existing_code.deleted_at = None
+                    if label:
+                        existing_code.label = label
+                    await self.consignment_code_repository.update(existing_code)
+                    return existing_code
+                else:
+                    raise ConflictException(
+                        f"Consignment code {code!r} exists in Trash and belongs to another buyer.",
+                        details={
+                            "in_trash": True,
+                            "trash_id": str(existing_code.id),
+                            "entity_type": "Consignment Code",
+                            "code": existing_code.code,
+                        },
+                    )
             raise ConflictException(f"Consignment code {code!r} already exists.")
         return await self.consignment_code_repository.create(code=code, label=label, buyer_id=buyer_id, branch_id=branch_id)
 
@@ -137,12 +156,22 @@ class InquiryService:
             raise BadRequestException("The specified buyer does not exist.")
         code = await self.consignment_code_repository.get_by_id(consignment_code_id)
         if code is None:
-            raise BadRequestException("The specified consignment code does not exist.")
+            # Check if it was in trash
+            code = await self.consignment_code_repository.get_any_by_code(str(consignment_code_id))
+            if code and code.deleted_at is not None:
+                code.deleted_at = None
+                await self.consignment_code_repository.update(code)
+            else:
+                raise BadRequestException("The specified consignment code does not exist.")
         if code.buyer_id != buyer_id:
             raise BadRequestException("This consignment code does not belong to the specified buyer.")
 
-        existing = await self.inquiry_repository.get_by_buyer_and_code(buyer_id, consignment_code_id)
+        existing = await self.inquiry_repository.get_any_by_buyer_and_code(buyer_id, consignment_code_id)
         if existing is not None:
+            if existing.deleted_at is not None:
+                # Consignment is in Trash! Revive it so new items are attached seamlessly!
+                existing.deleted_at = None
+                await self.inquiry_repository.update(existing)
             return existing
         return await self.inquiry_repository.create(
             buyer_id=buyer_id, consignment_code_id=consignment_code_id, created_by=user_id

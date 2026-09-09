@@ -988,6 +988,35 @@ Manage complete vendor team directory:
   - ❌ **`Purge` Button:** Permanently deletes record from database (restricted to Super Administrator).
 - **Bulk Actions:** `Restore Selected`, `Empty Trash`.
 
+### Trash Conflict Detection & One-Click Restore Modal (`TrashConflictModal.tsx`)
+- **Applies To:** All 12 Master Data catalogs (Categories, Sub Categories, Brands, UOM, HSN, Countries, States, Cities, Currencies, Supplier Types, Buyer Types, Companies), Product Master, Buyer Management, Supplier Directory, and Quick Inquiry Drawer.
+- **Test Checklist:**
+  1. **Category Soft-Delete & Re-creation Conflict:**
+     - Navigate to `/masters/categories`.
+     - Create category `"Alpha Test 1"`.
+     - Soft-delete `"Alpha Test 1"` (record moves to Trash).
+     - Click `+ Add Category` and enter name `"Alpha Test 1"`.
+     - Click `Save`.
+     - **Expected Outcome:** Instead of a 500 error or unexpected crash, an interactive `TrashConflictModal` dialog immediately appears stating: *"Category Already Exists in Trash"*, displaying the matching Name and Code.
+  2. **One-Click Restore Action:**
+     - In the conflict popup, click `[ 🔄 Restore Alpha Test 1 from Trash ]`.
+     - **Expected Outcome:** The modal shows *"Restoring..."* briefly, closes, the categories table refreshes showing `"Alpha Test 1"` active again, and global dropdown caches are invalidated.
+  3. **Preserve Form Inputs on Cancel:**
+     - Open the create drawer for any entity (e.g. Buyer or Product).
+     - Enter detailed information across multiple fields (e.g. 5 contact fields, website, categories).
+     - Use a company name that exists in Trash. Click `Save`.
+     - When `TrashConflictModal` appears, click `[ Change Name / Cancel ]`.
+     - **Expected Outcome:** The popup closes, but the create drawer remains completely OPEN with all entered values, phone numbers, and categories 100% preserved so the user can easily adjust the name without re-entering anything.
+  4. **Open Trash Shortcut:**
+     - In `TrashConflictModal`, click `[ Open Trash ↗ ]`.
+     - **Expected Outcome:** Opens `/trash` in a new browser tab without losing the current page context.
+  5. **Inquiry Consignment Code Re-use & Multi-Item Append:**
+     - Open `QuickInquiryDrawer` on `/inquiries`.
+     - Add 3 product line items with quantities, brands, and remarks.
+     - Specify a consignment code that exists in Trash.
+     - Click `Save as Proposed`.
+     - **Expected Outcome:** The conflict modal opens with primary action `[ 🔄 Restore & Append My Items ]`. Clicking it restores the consignment and immediately appends all 3 line items into it with zero manual re-entry.
+
 ---
 
 ## 24. USER ACCOUNT: Profile, Security & Active Sessions

@@ -121,27 +121,35 @@ class ProductService:
 
     async def create(self, **field_values: Any) -> Product:
         """Create a new product, validating code uniqueness if provided, and foreign-key references."""
+        from app.common.trash_conflict import check_trash_or_duplicate
+        from app.masters.products.models import Product
+
         product_code = field_values.get("product_code")
         if product_code and str(product_code).strip():
             clean_code = str(product_code).strip()
-            existing = await self.repository.get_by_code(clean_code)
-            if existing is not None:
-                raise ConflictException(
-                    f"Product code {clean_code!r} is already in use.",
-                    details={"existing": model_to_dict(existing)},
-                )
             field_values["product_code"] = clean_code
         else:
+            clean_code = None
             field_values["product_code"] = None
-        await self._validate_references(field_values)
 
-        # Handle Tally product name aliases
         p_tally = field_values.get("product_name_tally")
         p_name = field_values.get("product_name")
         if p_tally and not p_name:
             field_values["product_name"] = p_tally
+            p_name = p_tally
         elif p_name and not p_tally:
             field_values["product_name_tally"] = p_name
+
+        await check_trash_or_duplicate(
+            self.repository.session,
+            Product,
+            entity_type="Product",
+            name=p_name,
+            code=clean_code,
+            name_field="product_name",
+            code_field="product_code",
+        )
+        await self._validate_references(field_values)
 
         # Validate Packaging Gross Weight (kg) is mandatory and > 0
         gross_wt = field_values.get("packaging_gross_weight")
@@ -183,15 +191,23 @@ class ProductService:
 
     async def update(self, product_id: uuid.UUID, **field_values: Any) -> Product:
         """Update an existing product, validating code uniqueness and every foreign-key reference."""
+        from app.common.trash_conflict import check_trash_or_duplicate
+        from app.masters.products.models import Product
+
         product = await self.get_by_id_or_raise(product_id)
         product_code = field_values.get("product_code")
-        if product_code:
-            existing = await self.repository.get_by_code(product_code)
-            if existing is not None and existing.id != product_id:
-                raise ConflictException(
-                    f"Product code {product_code!r} is already in use.",
-                    details={"existing": model_to_dict(existing)},
-                )
+        p_name = field_values.get("product_name") or field_values.get("product_name_tally")
+        if product_code or p_name:
+            await check_trash_or_duplicate(
+                self.repository.session,
+                Product,
+                entity_type="Product",
+                name=p_name,
+                code=product_code,
+                name_field="product_name",
+                code_field="product_code",
+                exclude_id=product_id,
+            )
 
         merged = {
             "category_id": field_values.get("category_id", product.category_id),
