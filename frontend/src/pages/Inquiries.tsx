@@ -23,6 +23,7 @@ import { useAuth, usePendingGuard } from "@/lib/hooks";
 import { autoTitleCase } from "@/utils/text";
 import { TrashConflictModal, type TrashConflictInfo } from "@/components/TrashConflictModal";
 import {
+  BulkActionsDropdown,
   ImpExpDropdown,
   ImportSummaryPanel,
   downloadSampleCsv,
@@ -179,6 +180,8 @@ export function InquiriesPage() {
   const [codeNames, setCodeNames] = useState<Record<string, string>>({});
   const [productNames, setProductNames] = useState<Record<string, string>>({});
   const [uomNames, setUomNames] = useState<Record<string, string>>({});
+  type CompanyStatusTab = "all" | "pending" | "ongoing" | "approved" | "completed";
+  const [companyStatusTab, setCompanyStatusTab] = useState<CompanyStatusTab>("all");
   const [stats, setStats] = useState({ pending: 0, approved: 0, ongoing: 0, completed: 0, total_order: 0 });
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
@@ -275,29 +278,9 @@ export function InquiriesPage() {
                   Dashboard / Sales / Inquiries
                 </div>
               </div>
-
-              <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-                <button
-                  type="button"
-                  onClick={() => { setQuickAddInitialBuyerId(""); setQuickAddOpen(true); }}
-                  style={{
-                    background: "#0061f2",
-                    color: "#ffffff",
-                    border: "none",
-                    borderRadius: "6px",
-                    padding: "8px 16px",
-                    fontSize: "13px",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    boxShadow: "0 2px 4px rgba(0,97,242,0.2)",
-                  }}
-                >
-                  + ADD NEW
-                </button>
-              </div>
             </div>
 
-            {/* Top 5 KPI Cards matching Figma prototype for Company Dashboard */}
+            {/* Top 5 KPI Cards matching Figma prototype for Company Dashboard - Clickable filters */}
             <div
               style={{
                 display: "grid",
@@ -307,17 +290,20 @@ export function InquiriesPage() {
               }}
             >
               <div
+                onClick={() => setCompanyStatusTab("pending")}
                 style={{
-                  background: "#ffffff",
-                  border: "1px solid #e2e8f0",
+                  background: companyStatusTab === "pending" ? "#fffbeb" : "#ffffff",
+                  border: companyStatusTab === "pending" ? "2px solid #f59e0b" : "1px solid #e2e8f0",
                   borderRadius: "10px",
                   padding: "16px",
                   display: "flex",
                   alignItems: "center",
                   gap: "14px",
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                  boxShadow: companyStatusTab === "pending" ? "0 4px 12px rgba(245,158,11,0.15)" : "0 1px 3px rgba(0,0,0,0.04)",
                   transition: "all 0.15s ease",
+                  cursor: "pointer",
                 }}
+                title="Filter by Pending Inquiries"
               >
                 <div
                   style={{
@@ -347,17 +333,20 @@ export function InquiriesPage() {
               </div>
 
               <div
+                onClick={() => setCompanyStatusTab("approved")}
                 style={{
-                  background: "#ffffff",
-                  border: "1px solid #e2e8f0",
+                  background: companyStatusTab === "approved" ? "#ecfdf5" : "#ffffff",
+                  border: companyStatusTab === "approved" ? "2px solid #10b981" : "1px solid #e2e8f0",
                   borderRadius: "10px",
                   padding: "16px",
                   display: "flex",
                   alignItems: "center",
                   gap: "14px",
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                  boxShadow: companyStatusTab === "approved" ? "0 4px 12px rgba(16,185,129,0.15)" : "0 1px 3px rgba(0,0,0,0.04)",
                   transition: "all 0.15s ease",
+                  cursor: "pointer",
                 }}
+                title="Filter by Approved Inquiries"
               >
                 <div
                   style={{
@@ -387,17 +376,20 @@ export function InquiriesPage() {
               </div>
 
               <div
+                onClick={() => setCompanyStatusTab("ongoing")}
                 style={{
-                  background: "#ffffff",
-                  border: "1px solid #e2e8f0",
+                  background: companyStatusTab === "ongoing" ? "#eff6ff" : "#ffffff",
+                  border: companyStatusTab === "ongoing" ? "2px solid #3b82f6" : "1px solid #e2e8f0",
                   borderRadius: "10px",
                   padding: "16px",
                   display: "flex",
                   alignItems: "center",
                   gap: "14px",
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                  boxShadow: companyStatusTab === "ongoing" ? "0 4px 12px rgba(59,130,246,0.15)" : "0 1px 3px rgba(0,0,0,0.04)",
                   transition: "all 0.15s ease",
+                  cursor: "pointer",
                 }}
+                title="Filter by Ongoing Inquiries"
               >
                 <div
                   style={{
@@ -426,17 +418,20 @@ export function InquiriesPage() {
               </div>
 
               <div
+                onClick={() => setCompanyStatusTab("completed")}
                 style={{
-                  background: "#ffffff",
-                  border: "1px solid #e2e8f0",
+                  background: companyStatusTab === "completed" ? "#f0fdfa" : "#ffffff",
+                  border: companyStatusTab === "completed" ? "2px solid #14b8a6" : "1px solid #e2e8f0",
                   borderRadius: "10px",
                   padding: "16px",
                   display: "flex",
                   alignItems: "center",
                   gap: "14px",
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                  boxShadow: companyStatusTab === "completed" ? "0 4px 12px rgba(20,184,166,0.15)" : "0 1px 3px rgba(0,0,0,0.04)",
                   transition: "all 0.15s ease",
+                  cursor: "pointer",
                 }}
+                title="Filter by Completed Inquiries"
               >
                 <div
                   style={{
@@ -466,17 +461,20 @@ export function InquiriesPage() {
               </div>
 
               <div
+                onClick={() => setCompanyStatusTab("all")}
                 style={{
-                  background: "#ffffff",
-                  border: "1px solid #e2e8f0",
+                  background: companyStatusTab === "all" ? "#f5f3ff" : "#ffffff",
+                  border: companyStatusTab === "all" ? "2px solid #8b5cf6" : "1px solid #e2e8f0",
                   borderRadius: "10px",
                   padding: "16px",
                   display: "flex",
                   alignItems: "center",
                   gap: "14px",
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                  boxShadow: companyStatusTab === "all" ? "0 4px 12px rgba(139,92,246,0.15)" : "0 1px 3px rgba(0,0,0,0.04)",
                   transition: "all 0.15s ease",
+                  cursor: "pointer",
                 }}
+                title="Show All Inquiries"
               >
                 <div
                   style={{
@@ -519,6 +517,8 @@ export function InquiriesPage() {
             onError={setError}
             refreshKey={refreshTrigger}
             onOpenQuickAdd={(buyerId) => { setQuickAddInitialBuyerId(buyerId || ""); setQuickAddOpen(true); }}
+            activeStatusTab={companyStatusTab}
+            onTabChange={setCompanyStatusTab}
           />
         )}
         {view.layer === "consignments" && (
@@ -576,6 +576,8 @@ function CompaniesView({
   onError,
   refreshKey,
   onOpenQuickAdd,
+  activeStatusTab,
+  onTabChange,
 }: {
   onOpenCompany: (buyerId: string) => void;
   resolveBuyerName: (buyerId: string) => Promise<void>;
@@ -583,10 +585,16 @@ function CompaniesView({
   onError: (err: unknown) => void;
   refreshKey: number;
   onOpenQuickAdd: (buyerId?: string) => void;
+  activeStatusTab?: "all" | "pending" | "ongoing" | "approved" | "completed";
+  onTabChange?: (tab: "all" | "pending" | "ongoing" | "approved" | "completed") => void;
 }) {
   const [summaries, setSummaries] = useState<CompanySummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedBuyerIds, setSelectedBuyerIds] = useState<string[]>([]);
+  const [localStatusTab, setLocalStatusTab] = useState<"all" | "pending" | "ongoing" | "approved" | "completed">("all");
+
+  const statusTab = activeStatusTab !== undefined ? activeStatusTab : localStatusTab;
+  const setStatusTab = onTabChange || setLocalStatusTab;
 
   const loadSummaries = useCallback(async () => {
     setLoading(true);
@@ -610,11 +618,47 @@ function CompaniesView({
     void loadSummaries();
   }, [loadSummaries, refreshKey]);
 
+  // Tab counts based on all loaded company summaries
+  const tabCounts = useMemo(() => {
+    let pending = 0;
+    let ongoing = 0;
+    let approved = 0;
+    let completed = 0;
+    summaries.forEach((s) => {
+      const st = s.consignment_status;
+      if (st === "proposed") {
+        pending++;
+        ongoing++;
+      } else if (st === "partial_approved") {
+        ongoing++;
+        pending++;
+        approved++;
+      } else if (st === "fully_approved") {
+        approved++;
+        completed++;
+      }
+    });
+    return { all: summaries.length, pending, ongoing, approved, completed };
+  }, [summaries]);
+
+  // Filter company summaries according to active lifecycle tab
+  const filteredSummaries = useMemo(() => {
+    if (statusTab === "all") return summaries;
+    return summaries.filter((s) => {
+      const st = s.consignment_status;
+      if (statusTab === "pending") return st === "proposed" || (s.proposed_count || 0) > 0;
+      if (statusTab === "ongoing") return st === "partial_approved" || st === "proposed";
+      if (statusTab === "approved") return st === "fully_approved" || st === "partial_approved" || (s.approved_count || 0) > 0;
+      if (statusTab === "completed") return st === "fully_approved";
+      return true;
+    });
+  }, [summaries, statusTab]);
+
   const toggleSelectAll = () => {
-    if (selectedBuyerIds.length === summaries.length) {
+    if (selectedBuyerIds.length === filteredSummaries.length && filteredSummaries.length > 0) {
       setSelectedBuyerIds([]);
     } else {
-      setSelectedBuyerIds(summaries.map((s) => s.buyer_id));
+      setSelectedBuyerIds(filteredSummaries.map((s) => s.buyer_id));
     }
   };
 
@@ -635,16 +679,122 @@ function CompaniesView({
     }
   }
 
+  async function handleBulkDeleteCompanies() {
+    if (!selectedBuyerIds.length) return;
+    if (!window.confirm(`Delete all consignments for the ${selectedBuyerIds.length} selected buyer company(ies)? This will safely move them to Trash.`)) return;
+    try {
+      setLoading(true);
+      for (const buyerId of selectedBuyerIds) {
+        const { data: consignments } = await apiGet<InquiryListItem[]>(`/inquiries/companies/${buyerId}`);
+        await Promise.all(consignments.map((c) => apiDelete(`/inquiries/${c.id}`)));
+      }
+      setSelectedBuyerIds([]);
+      void loadSummaries();
+    } catch (err) {
+      onError(err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: "10px" }}>
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 600, color: "#0F172A", margin: 0 }}>Inquiries — Company Wise</h1>
           <p className="muted" style={{ margin: "4px 0 0 0" }}>
             Select a buyer company to see its consignments (e.g. FB1, FB2, ING1…).
           </p>
         </div>
+
+        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <Can permission="inquiry.delete">
+            <BulkActionsDropdown
+              selectedCount={selectedBuyerIds.length}
+              onBulkDelete={handleBulkDeleteCompanies}
+            />
+          </Can>
+          <Can permission="inquiry.create">
+            <button
+              type="button"
+              onClick={() => onOpenQuickAdd()}
+              style={{
+                background: "#0061f2",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "6px",
+                padding: "8px 16px",
+                fontSize: "13px",
+                fontWeight: 600,
+                cursor: "pointer",
+                boxShadow: "0 2px 4px rgba(0,97,242,0.2)",
+              }}
+            >
+              + ADD NEW
+            </button>
+          </Can>
+        </div>
       </div>
+
+      {/* Lifecycle Filter Tabs matching Product Master Active/Inactive tabs style */}
+      <div
+        style={{
+          display: "flex",
+          gap: "24px",
+          borderBottom: "1px solid #E2E8F0",
+          marginBottom: "14px",
+          paddingLeft: "4px",
+        }}
+      >
+        {(
+          [
+            { key: "all", label: "All" },
+            { key: "pending", label: "Pending" },
+            { key: "ongoing", label: "Ongoing" },
+            { key: "approved", label: "Approved" },
+            { key: "completed", label: "Completed" },
+          ] as const
+        ).map((t) => {
+          const isActive = statusTab === t.key;
+          const count = tabCounts[t.key];
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setStatusTab(t.key)}
+              style={{
+                background: "none",
+                border: "none",
+                borderBottom: isActive ? "2.5px solid #0061f2" : "2.5px solid transparent",
+                color: isActive ? "#0061f2" : "#64748b",
+                fontWeight: isActive ? 700 : 600,
+                fontSize: "13.5px",
+                paddingBottom: "8px",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <span>{t.label}</span>
+              <span
+                style={{
+                  background: isActive ? "#e0f2fe" : "#f1f5f9",
+                  color: isActive ? "#0284c7" : "#64748b",
+                  padding: "1px 6px",
+                  borderRadius: "10px",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                }}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       <div style={{ overflowX: "auto", border: "1px solid #E2E8F0", borderRadius: 8 }}>
         <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
           <thead>
@@ -652,7 +802,7 @@ function CompaniesView({
               <th style={{ ...thStyle, width: "40px" }}>
                 <input
                   type="checkbox"
-                  checked={summaries.length > 0 && selectedBuyerIds.length === summaries.length}
+                  checked={filteredSummaries.length > 0 && selectedBuyerIds.length === filteredSummaries.length}
                   onChange={toggleSelectAll}
                 />
               </th>
@@ -668,10 +818,14 @@ function CompaniesView({
           <tbody>
             {loading ? (
               <InquiriesBuyerSummarySkeletonRows count={6} />
-            ) : summaries.length === 0 ? (
-              <TableMessageRow colSpan={8}>No inquiries yet. Add an item from a consignment to get started.</TableMessageRow>
+            ) : filteredSummaries.length === 0 ? (
+              <TableMessageRow colSpan={8}>
+                {statusTab === "all"
+                  ? "No inquiries yet. Add an item from a consignment to get started."
+                  : `No ${statusTab} inquiries found.`}
+              </TableMessageRow>
             ) : (
-              summaries.map((s) => (
+              filteredSummaries.map((s) => (
                 <tr key={s.buyer_id}>
                   <td style={tdStyle}>
                     <input
@@ -783,6 +937,9 @@ function ConsignmentsView({
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  const [selectedInquiryIds, setSelectedInquiryIds] = useState<string[]>([]);
+  const [statusTab, setStatusTab] = useState<"all" | "proposed" | "partial_approved" | "fully_approved">("all");
+
   // Phase 7: keyed so deleting one row never disables another row's button.
   const { isPending: isRowActionPending, guard: guardRowAction } = usePendingGuard<string>();
 
@@ -802,17 +959,66 @@ function ConsignmentsView({
     void load();
   }, [load]);
 
+  // Tab counts based on all loaded consignments for this company
+  const tabCounts = useMemo(() => {
+    let proposed = 0;
+    let partial_approved = 0;
+    let fully_approved = 0;
+    rows.forEach((r) => {
+      if (r.consignment_status === "proposed") proposed++;
+      else if (r.consignment_status === "partial_approved") partial_approved++;
+      else if (r.consignment_status === "fully_approved") fully_approved++;
+    });
+    return { all: rows.length, proposed, partial_approved, fully_approved };
+  }, [rows]);
+
+  // Filtered consignments by tab and search keyword
   const filtered = useMemo(() => {
-    if (!search.trim()) return rows;
-    const q = search.toLowerCase();
-    return rows.filter((r) => (r.consignment_code || codeNames[r.consignment_code_id] || "").toLowerCase().includes(q));
-  }, [rows, search, codeNames]);
+    let list = rows;
+    if (statusTab !== "all") {
+      list = list.filter((r) => r.consignment_status === statusTab);
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter((r) => (r.consignment_code || codeNames[r.consignment_code_id] || "").toLowerCase().includes(q));
+    }
+    return list;
+  }, [rows, statusTab, search, codeNames]);
+
+  const toggleSelectAll = () => {
+    if (selectedInquiryIds.length === filtered.length && filtered.length > 0) {
+      setSelectedInquiryIds([]);
+    } else {
+      setSelectedInquiryIds(filtered.map((r) => r.id));
+    }
+  };
+
+  const toggleSelectOne = (id: string) => {
+    setSelectedInquiryIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
 
   async function handleDelete(inquiryId: string) {
     if (!window.confirm("Delete this consignment and all its items?")) return;
     await guardRowAction(`delete:${inquiryId}`, async () => {
       try {
         await apiDelete(`/inquiries/${inquiryId}`);
+        setSelectedInquiryIds((prev) => prev.filter((id) => id !== inquiryId));
+        void load();
+      } catch (err) {
+        onError(err);
+      }
+    });
+  }
+
+  async function handleBulkDelete() {
+    if (!selectedInquiryIds.length) return;
+    if (!window.confirm(`Delete ${selectedInquiryIds.length} selected consignment(s) and all their items? They can be restored from Trash.`)) return;
+    await guardRowAction("bulk-delete", async () => {
+      try {
+        await Promise.all(selectedInquiryIds.map((id) => apiDelete(`/inquiries/${id}`)));
+        setSelectedInquiryIds([]);
         void load();
       } catch (err) {
         onError(err);
@@ -822,12 +1028,18 @@ function ConsignmentsView({
 
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: "10px" }}>
         <h1 style={{ fontSize: 20, fontWeight: 600, color: "#0F172A", margin: 0 }}>{buyerName || "…"} — Consignments</h1>
         <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
           <button type="button" onClick={onBack} className="btn btn-outline" style={{ background: "#ffffff", border: "1px solid #cbd5e1", color: "#475569", fontWeight: 600, fontSize: "13px", padding: "6px 14px", borderRadius: "6px", cursor: "pointer" }}>
             ← All Companies
           </button>
+          <Can permission="inquiry.delete">
+            <BulkActionsDropdown
+              selectedCount={selectedInquiryIds.length}
+              onBulkDelete={handleBulkDelete}
+            />
+          </Can>
           <Can permission="inquiry.create">
             <button type="button" className="btn btn-primary" onClick={() => setAddOpen(true)}>
               + Add Inquiry Item
@@ -836,18 +1048,83 @@ function ConsignmentsView({
         </div>
       </div>
 
-      <input
-        placeholder="Search consignment code…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        style={{ padding: 8, border: "1px solid #CBD5E1", borderRadius: 6, fontSize: 13, marginBottom: 12, width: 260 }}
-      />
+      {/* Lifecycle Filter Tabs and Search Bar matching Product Master style */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: "12px" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: "20px",
+            borderBottom: "1px solid #E2E8F0",
+            paddingLeft: "4px",
+          }}
+        >
+          {(
+            [
+              { key: "all", label: "All" },
+              { key: "proposed", label: "Proposed" },
+              { key: "partial_approved", label: "Partial Approved" },
+              { key: "fully_approved", label: "Fully Approved" },
+            ] as const
+          ).map((t) => {
+            const isActive = statusTab === t.key;
+            const count = tabCounts[t.key];
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setStatusTab(t.key)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  borderBottom: isActive ? "2.5px solid #0061f2" : "2.5px solid transparent",
+                  color: isActive ? "#0061f2" : "#64748b",
+                  fontWeight: isActive ? 700 : 600,
+                  fontSize: "13px",
+                  paddingBottom: "8px",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                <span>{t.label}</span>
+                <span
+                  style={{
+                    background: isActive ? "#e0f2fe" : "#f1f5f9",
+                    color: isActive ? "#0284c7" : "#64748b",
+                    padding: "1px 6px",
+                    borderRadius: "10px",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                  }}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <input
+          placeholder="Search consignment code…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ padding: "6px 12px", border: "1px solid #CBD5E1", borderRadius: 6, fontSize: 13, width: 220 }}
+        />
+      </div>
 
       <div style={{ overflowX: "auto", border: "1px solid #E2E8F0", borderRadius: 8 }}>
         <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
           <thead>
             <tr style={{ background: "#F8FAFC" }}>
-              <th style={thStyle}></th>
+              <th style={{ ...thStyle, width: "40px" }}>
+                <input
+                  type="checkbox"
+                  checked={filtered.length > 0 && selectedInquiryIds.length === filtered.length}
+                  onChange={toggleSelectAll}
+                />
+              </th>
               <th style={thStyle}>Consignment Code</th>
               <th style={thStyle}>Status</th>
               <th style={thStyle}>Total CBM</th>
@@ -860,11 +1137,19 @@ function ConsignmentsView({
             {loading ? (
               <InquiriesConsignmentSkeletonRows count={5} />
             ) : filtered.length === 0 ? (
-              <TableMessageRow colSpan={7}>No consignments for this company yet.</TableMessageRow>
+              <TableMessageRow colSpan={7}>
+                {statusTab === "all" ? "No consignments for this company yet." : `No ${statusLabel(statusTab)} consignments found.`}
+              </TableMessageRow>
             ) : (
               filtered.map((r) => (
                 <tr key={r.id}>
-                  <td style={tdStyle}><input type="checkbox" /></td>
+                  <td style={tdStyle}>
+                    <input
+                      type="checkbox"
+                      checked={selectedInquiryIds.includes(r.id)}
+                      onChange={() => toggleSelectOne(r.id)}
+                    />
+                  </td>
                   <td style={tdStyle}>
                     <button type="button" onClick={() => onOpenConsignment(r.id)} className="btn-link">
                       {r.consignment_code || codeNames[r.consignment_code_id] || "…"}

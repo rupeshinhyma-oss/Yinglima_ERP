@@ -1858,11 +1858,19 @@ export function ImpExpDropdown({
   );
 }
 
+export interface BulkActionItem {
+  label: string;
+  icon?: string;
+  color?: string;
+  onClick: () => void;
+}
+
 export interface BulkActionsDropdownProps {
   selectedCount: number;
   onBulkActivate?: () => void;
   onBulkDeactivate?: () => void;
   onBulkDelete?: () => void;
+  customActions?: BulkActionItem[];
 }
 
 export function BulkActionsDropdown({
@@ -1870,6 +1878,7 @@ export function BulkActionsDropdown({
   onBulkActivate,
   onBulkDeactivate,
   onBulkDelete,
+  customActions,
 }: BulkActionsDropdownProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -2008,6 +2017,34 @@ export function BulkActionsDropdown({
                   🗑️ Bulk Delete ({selectedCount})
                 </button>
               )}
+              {customActions && customActions.map((action, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    action.onClick();
+                  }}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "10px 14px",
+                    fontSize: "13.5px",
+                    color: action.color || "#0f172a",
+                    fontWeight: 600,
+                    background: "none",
+                    border: "none",
+                    borderTop: (idx > 0 || onBulkActivate || onBulkDeactivate || onBulkDelete) ? "1px solid #f1f5f9" : "none",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}
+                >
+                  {action.icon && <span>{action.icon}</span>}
+                  <span>{action.label} ({selectedCount})</span>
+                </button>
+              ))}
             </>
           )}
         </div>

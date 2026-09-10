@@ -1,7 +1,7 @@
 # Enterprise ERP System — Unified Architecture, Feature & Technical Manual
 
 > **System Version:** 1.1.0 (Production)  
-> **Last Updated:** September 9, 2026 (Universal Trash Conflict Detection & 1-Click Restore Engine across all Masters, Suppliers, Buyers, Products, and Inquiries; zero form data loss)  
+> **Last Updated:** September 10, 2026 (Inquiry Lifecycle Tabs & Bulk Actions Engine across Companies and Consignments views; matching Product Master pattern; zero regression)  
 > **Repository:** `https://github.com/rupeshinhyma-oss/Yinglima_ERP.git`  
 > **Architectural Pattern:** Modular Async Monolith (FastAPI) + React 18 SPA (Vite) + Real-Time WebSocket Event Bus  
 > **Target Audience:** Systems Architects, Software Engineers, DevOps, and Autonomous AI Coding Assistants.  
@@ -379,6 +379,15 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
 - **Endpoints:** `GET /inquiries`, `POST /inquiries`, `POST /inquiries/{inquiry_id}/items/import`, `GET /inquiries/sample-template`, `POST /inquiries/{id}/rfq/dispatch`, `POST /inquiries/{id}/send-email-message`, `GET /inquiries/{id}/messages`, `POST /inquiries/{id}/quotes/manual`, `POST /inquiries/{id}/quotes/extract-pdf`, `POST /inquiries/{id}/convert-to-proforma`, `GET /inquiries/{id}/compare-matrix`.
 - **Features:**
   - 3-layer RFQ and Quotation management lifecycle: `Buyer Directory` $\rightarrow$ `Consignments` $\rightarrow$ `Line Items & Quotation Matrix`.
+  - **Inquiry Lifecycle Tabs & Bulk Actions Engine (Matching Product Master Pattern)**:
+    - **Layer 1 (Company Dashboard)**:
+      - **Lifecycle Filter Tabs**: `All (N)`, `Pending (N)`, `Ongoing (N)`, `Approved (N)`, `Completed (N)` rendered directly above the table card with blue indicator underline and dynamic badge counters.
+      - **Interactive KPI Cards**: The 5 top summary cards (`Pending`, `Approved`, `Ongoing`, `Completed`, `Total Order`) are clickable, interactive filter triggers with active colored borders and elevated shadows that smoothly sync with the Lifecycle Tabs.
+      - **Bulk Actions Dropdown (`BulkActionsDropdown`)**: Positioned at the top-right of the table beside `+ ADD NEW`. Provides 1-click **Bulk Delete (Move to Trash)** with confirmation dialog and pending protection across selected buyer companies.
+    - **Layer 2 (Consignments Table)**:
+      - **Lifecycle Filter Tabs**: `All (N)`, `Proposed (N)`, `Partial Approved (N)`, `Fully Approved (N)` placed above the consignment table alongside the live search input.
+      - **Master & Row Multi-Select Checkboxes**: Table header contains a master "Select All" checkbox; rows have individual checkboxes bound to `selectedInquiryIds`.
+      - **Bulk Actions Dropdown**: Positioned at the top-right beside `+ Add Inquiry Item`. Enables 1-click **Bulk Delete (Move to Trash)** for selected consignments and child items.
   - **Inquiry Product Bulk Import (Excel .xlsx, .xls & .csv)**:
     - Dedicated full-page import workflow in Layer 3 Consignment Workspace (`ItemsView`) modeled identically on the Supplier Import system.
     - Unified `Imp / Exp ▾` action button: provides *Sample File* download, *Import* (navigates to the dedicated import view), and *Export* (`.xlsx` or `.csv`).

@@ -475,22 +475,32 @@ Manage complete vendor team directory:
   $$\text{Layer 1: Buyer Summary Directory} \longrightarrow \text{Layer 2: Buyer Consignments (FB1, FB2...)} \longrightarrow \text{Layer 3: Inquiry Line Items, RFQs \& Quotation Matrix}$$
 
 ### 13.1. Layer 1: Buyer Inquiries Directory
-- **Summary Cards / Top KPIs:**
-  - **Pending RFQs:** Count of items awaiting supplier quotes.
-  - **Approved Quotes:** Count of line items with approved supplier pricing.
-  - **Ongoing Inquiries:** Active buyer consignments currently in negotiation.
-  - **Completed Consignments:** Successfully ordered / fulfilled consignments.
-  - **Total Order Value:** Sum of all active consignment line items.
+- **Summary Cards / Top KPIs (Interactive Filters):**
+  - **Pending RFQs:** Count of items awaiting supplier quotes. Clickable &rarr; sets tab to `Pending`.
+  - **Approved Quotes:** Count of line items with approved supplier pricing. Clickable &rarr; sets tab to `Approved`.
+  - **Ongoing Inquiries:** Active buyer consignments currently in negotiation. Clickable &rarr; sets tab to `Ongoing`.
+  - **Completed Consignments:** Successfully ordered / fulfilled consignments. Clickable &rarr; sets tab to `Completed`.
+  - **Total Order Value:** Sum of all active consignment line items. Clickable &rarr; sets tab to `All`.
+- **Lifecycle Filter Tabs (Matching Product Master Pattern):**
+  - Positioned directly above the company table: `All (N)`, `Pending (N)`, `Ongoing (N)`, `Approved (N)`, `Completed (N)`.
+  - Active tab highlighted with blue underline (`2.5px solid #0061f2`) and active text color.
+- **Top Actions & Bulk Operations:**
+  - 🟢 **`Bulk Actions (N) ▾` Button & Dropdown Menu:**
+    - Positioned in the top-right header alongside `+ ADD NEW`.
+    - Shows `Select 1 or more items from list first` tooltip if 0 selected.
+    - Turns vibrant green (`#10b981`) with active count `(N)` when $\ge 1$ company is selected via checkboxes.
+    - **`🗑️ Bulk Delete ({N})`**: Deletes all consignments across selected buyer companies safely into Trash with confirmation prompt.
+  - ➕ **`+ ADD NEW` Button:** Opens the `QuickInquiryDrawer`.
 - **Buyer Directory Table Columns:**
-  1. **Checkbox:** Select all / individual buyer rows.
-  2. **SR. NO.:** Sequential index with sort.
-  3. **BUYER COMPANY NAME:** Clickable buyer title drilling down to Layer 2 Consignments.
-  4. **ACTIVE CONSIGNMENTS:** Count badge of active consignments (e.g. `3 Consignments`).
-  5. **TOTAL ITEMS:** Total product line items across all consignments.
-  6. **STATUS BADGE:** `PENDING`, `PARTIAL_APPROVED`, `FULLY_APPROVED`, `COMPLETED`.
-  7. **ORDER VALUE:** Financial sum with currency indicator.
-  8. **ACTIONS:** Drilldown arrow (`➔`), Quick Add Item button.
-- **Top Actions:**
+  1. **Checkbox:** Master select all in header; individual checkboxes per buyer row.
+  2. **BUYER COMPANY NAME:** Clickable buyer title drilling down to Layer 2 Consignments.
+  3. **CONSIGNMENT CODES:** Tag pills of consignment codes (e.g. `📦 FB1`, `📦 FB2`).
+  4. **STATUS BADGE:** `Pending`, `Partial Approved`, `Fully Approved`.
+  5. **TOTAL CBM:** Sum of CBM for this company's consignments.
+  6. **TOTAL WEIGHT:** Total kilograms.
+  7. **UPDATED DATE:** Timestamp of latest update.
+  8. **ACTIONS:** `👁️ View`, `✏️ Edit`, `🗑️ Delete`.
+- **Top Actions Details:**
   - ⚡ **`+ Quick Add Inquiry` Drawer:**
     - **Buyer Company** (*Required*): Searchable dropdown from `/buyers`.
     - **Consignment Code** (*Required*): Dropdown of existing codes or type new (e.g. `FB1`). Automatically cross-references existing codes to reuse matching IDs and prevent `HTTP 409 Conflict` errors.
@@ -519,17 +529,23 @@ Manage complete vendor team directory:
 
 ### 13.2. Layer 2: Consignments View (Inside a Buyer)
 - **Top Header & Navigation:**
-  - `← Back to All Companies` breadcrumb button.
-  - Heading: `Inquiries for {Buyer Company Name}`.
+  - `← All Companies` breadcrumb back button.
+  - Heading: `{Buyer Company Name} — Consignments`.
+  - 🟢 **`Bulk Actions (N) ▾` Button:** Top-right action bar beside `+ Add Inquiry Item`.
+    - Active when $\ge 1$ consignment checkbox is selected.
+    - **`🗑️ Bulk Delete ({N})`**: Deletes selected consignments and child items safely into Trash with confirmation prompt.
+  - ➕ **`+ Add Inquiry Item` Button:** Opens `AddItemModal`.
+- **Lifecycle Filter Tabs & Search Bar:**
+  - Tabs: `All (N)`, `Proposed (N)`, `Partial Approved (N)`, `Fully Approved (N)`.
+  - Live search input: `Search consignment code…`.
 - **Consignments Table Columns:**
-  1. **CONSIGNMENT CODE:** Clickable title (e.g. `FB1`, `FB2`) drilling down to Layer 3 Line Items.
-  2. **CREATED DATE:** Timestamp of inquiry initiation.
-  3. **TARGET DELIVERY DATE:** Expected receiving / shipping date.
-  4. **TOTAL ITEMS:** Count of items in this consignment.
-  5. **RFQ DISPATCH STATUS:** `Not Sent`, `Sent to Suppliers`, `Quotes Received`.
-  6. **QUOTES RECEIVED:** Count of submitted vendor quotes (e.g. `4 Quotes`).
-  7. **STATUS:** `DRAFT`, `SENT_TO_SUPPLIERS`, `UNDER_EVALUATION`, `APPROVED`, `CLOSED`.
-  8. **ACTIONS:** `Open Items View`, `Edit Consignment Details`, `Delete Consignment`.
+  1. **Checkbox:** Master select-all checkbox in `th`; row checkbox in each `td`.
+  2. **CONSIGNMENT CODE:** Clickable title (e.g. `FB1`, `FB2`) drilling down to Layer 3 Line Items.
+  3. **STATUS:** `badge-gray` (Proposed), `badge-yellow` (Partial Approved), `badge-green` (Fully Approved).
+  4. **TOTAL CBM:** Sum of CBM.
+  5. **TOTAL WEIGHT:** Sum of weight (kg).
+  6. **UPDATED:** Date of latest update.
+  7. **ACTION:** `View` (drills into Layer 3), `Delete` (moves to Trash).
 
 ---
 
