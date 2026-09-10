@@ -307,17 +307,34 @@ export function ProductPricesPage() {
     }
   }, []);
 
+  // Hover Pre-fetching: Fetches supplier quotes into memory as soon as mouse hovers over row or button
+  const prefetchProductSuppliers = useCallback(
+    (productId: string, supplierCount?: number) => {
+      if (supplierCount === 0) {
+        setSupplierQuotes((prev) => (prev[productId] ? prev : { ...prev, [productId]: [] }));
+        return;
+      }
+      if (supplierQuotes[productId] || loadingQuotes[productId]) return;
+      loadProductSuppliers(productId);
+    },
+    [loadProductSuppliers, supplierQuotes, loadingQuotes]
+  );
+
   const toggleRowExpansion = useCallback(
-    (productId: string) => {
+    (productId: string, supplierCount?: number) => {
       setExpandedRows((prev) => {
         const nextState = !prev[productId];
-        if (nextState && !supplierQuotes[productId]) {
-          loadProductSuppliers(productId);
+        if (nextState) {
+          if (supplierCount === 0) {
+            setSupplierQuotes((q) => (q[productId] ? q : { ...q, [productId]: [] }));
+          } else if (!supplierQuotes[productId] && !loadingQuotes[productId]) {
+            loadProductSuppliers(productId);
+          }
         }
         return { ...prev, [productId]: nextState };
       });
     },
-    [loadProductSuppliers, supplierQuotes]
+    [loadProductSuppliers, supplierQuotes, loadingQuotes]
   );
 
   // Start Inline Price Edit
@@ -331,7 +348,7 @@ export function ProductPricesPage() {
     setEditPriceInput("");
   };
 
-  // Commit Inline Price Edit
+  // Commit Inline Price Edit with Instant Optimistic UI
   const saveInlinePrice = async (linkId: string, productId: string) => {
     const clean = editPriceInput.replace(/[^0-9.]/g, "");
     const num = parseFloat(clean);
@@ -340,79 +357,178 @@ export function ProductPricesPage() {
       return;
     }
 
+    // 1. INSTANT OPTIMISTIC SUB-TABLE UPDATE
+    const updatedQuotes = (supplierQuotes[productId] || []).map((q) =>
+      q.link_id === linkId ? { ...q, unit_price: num } : q
+    );
+    updatedQuotes.sort((a, b) => (a.unit_price ?? 999999) - (b.unit_price ?? 999999));
+    setSupplierQuotes((prev) => ({ ...prev, [productId]: updatedQuotes }));
+
+    // 2. INSTANT OPTIMISTIC MAIN ROW UPDATE
+    const newLowest =
+      updatedQuotes.length > 0
+        ? updatedQuotes.reduce<number | null>(
+            (min, q) => (q.unit_price != null ? (min == null || q.unit_price < min ? q.unit_price : min) : min),
+            null
+          )
+        : num;
+    const newBestQuote = updatedQuotes.find((q) => q.unit_price === newLowest);
+
+    setItems((prev) =>
+      prev.map((row) => {
+        if (row.product_id === productId) {
+          const isPrimary = row.primary_link_id === linkId;
+          return {
+            ...row,
+            best_price: newLowest,
+            best_currency: newBestQuote ? newBestQuote.currency : row.best_currency,
+            primary_supplier_id: isPrimary ? row.primary_supplier_id : newBestQuote ? newBestQuote.supplier_id : row.primary_supplier_id,
+            primary_supplier_name: isPrimary ? row.primary_supplier_name : newBestQuote ? newBestQuote.supplier_name : row.primary_supplier_name,
+            has_price: true,
+          };
+        }
+        return row;
+      })
+    );
+
+    setEditingLinkId(null);
+    setSuccess("Price updated successfully");
+    setTimeout(() => setSuccess(null), 3000);
+
     setSavingLinkId(linkId);
     try {
       await apiPatch(`/inventory/product-prices/${linkId}`, { unit_price: num });
-
-      // Optimistic update on quotes sub-table
-      setSupplierQuotes((prev) => {
-        const list = prev[productId] || [];
-        return {
-          ...prev,
-          [productId]: list.map((q) => (q.link_id === linkId ? { ...q, unit_price: num } : q)),
-        };
-      });
-
-      // Optimistic update on main items
-      setItems((prev) =>
-        prev.map((row) => {
-          if (row.product_id === productId) {
-            const isPrimary = row.primary_link_id === linkId;
-            return {
-              ...row,
-              best_price: isPrimary ? num : Math.min(row.best_price ?? num, num),
-              has_price: true,
-            };
-          }
-          return row;
-        })
-      );
-
-      setEditingLinkId(null);
-      setSuccess("Price updated successfully");
-      setTimeout(() => setSuccess(null), 3000);
-      loadProductSuppliers(productId);
     } catch (err) {
       alert("Failed to update price: " + (err instanceof Error ? err.message : String(err)));
+      loadProductSuppliers(productId);
+      fetchPrices();
     } finally {
       setSavingLinkId(null);
     }
   };
 
-  // Delete a supplier quote link
+  // Delete a supplier quote link with Instant Optimistic UI
   const handleDeleteQuote = async (linkId: string, productId: string, supplierName: string) => {
     if (!confirm(`Remove price quote from ${supplierName}?`)) return;
 
+    // 1. INSTANT OPTIMISTIC SUB-TABLE REMOVAL
+    const remainingQuotes = (supplierQuotes[productId] || []).filter((q) => q.link_id !== linkId);
+    setSupplierQuotes((prev) => ({ ...prev, [productId]: remainingQuotes }));
+
+    // 2. INSTANT OPTIMISTIC MAIN ROW UPDATE
+    const newLowest =
+      remainingQuotes.length > 0
+        ? remainingQuotes.reduce<number | null>(
+            (min, q) => (q.unit_price != null ? (min == null || q.unit_price < min ? q.unit_price : min) : min),
+            null
+          )
+        : null;
+    const newBestQuote = remainingQuotes.find((q) => q.unit_price === newLowest);
+
+    setItems((prev) =>
+      prev.map((row) => {
+        if (row.product_id === productId) {
+          return {
+            ...row,
+            best_price: newLowest,
+            best_currency: newBestQuote ? newBestQuote.currency : row.best_currency,
+            primary_supplier_id: newBestQuote ? newBestQuote.supplier_id : null,
+            primary_supplier_name: newBestQuote ? newBestQuote.supplier_name : null,
+            primary_link_id: newBestQuote ? newBestQuote.link_id : null,
+            supplier_count: remainingQuotes.length,
+          };
+        }
+        return row;
+      })
+    );
+
+    setSuccess(`Quote from ${supplierName} removed`);
+    setTimeout(() => setSuccess(null), 3000);
+
     try {
       await apiDelete(`/inventory/product-prices/${linkId}`);
-      setSuccess(`Quote from ${supplierName} removed`);
-      setTimeout(() => setSuccess(null), 3000);
-
-      // Refresh sub-table and main row
-      await loadProductSuppliers(productId);
-      fetchPrices();
     } catch (err) {
       alert("Failed to remove quote: " + (err instanceof Error ? err.message : String(err)));
+      loadProductSuppliers(productId);
+      fetchPrices();
     }
   };
 
-  // Quick Add Supplier Quote in Sub-table
+  // Quick Add Supplier Quote in Sub-table with Instant Optimistic UI
   const handleQuickAddQuote = async (productId: string) => {
     const suppId = subTableSupplierId[productId];
     const priceStr = subTablePrice[productId];
     const curr = subTableCurrency[productId] || "CNY";
     const moqStr = subTableMoq[productId];
 
-    if (!suppId) {
-      alert("Please select a supplier.");
+    if (!suppId || !priceStr) {
       return;
     }
-    const priceNum = parseFloat(priceStr);
+    const cleanPrice = priceStr.replace(/[^0-9.]/g, "");
+    const priceNum = parseFloat(cleanPrice);
     if (isNaN(priceNum) || priceNum < 0) {
-      alert("Please enter a valid price.");
       return;
     }
 
+    const moqVal = moqStr ? parseFloat(moqStr.replace(/[^0-9.]/g, "")) : null;
+    const resolvedSuppName = allSuppliers.find((s) => s.id === suppId)?.company_name || "Supplier";
+
+    // 1. INSTANT OPTIMISTIC SUB-TABLE UPDATE
+    setSupplierQuotes((prev) => {
+      const existing = prev[productId] || [];
+      const idx = existing.findIndex((q) => q.supplier_id === suppId);
+      const newQuote: SupplierQuote = {
+        link_id: idx >= 0 ? existing[idx].link_id : `temp-${Date.now()}`,
+        product_id: productId,
+        supplier_id: suppId,
+        supplier_name: resolvedSuppName,
+        supplier_code: null,
+        contact_calling_number: idx >= 0 ? existing[idx].contact_calling_number : null,
+        contact_whatsapp_number: idx >= 0 ? existing[idx].contact_whatsapp_number : null,
+        contact_wechat_number: idx >= 0 ? existing[idx].contact_wechat_number : null,
+        city_name: idx >= 0 ? existing[idx].city_name : null,
+        state_name: idx >= 0 ? existing[idx].state_name : null,
+        country_name: idx >= 0 ? existing[idx].country_name : null,
+        unit_price: priceNum,
+        currency: curr,
+        moq: moqVal,
+        notes: null,
+        updated_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+      };
+      const nextList = idx >= 0 ? existing.map((q, i) => (i === idx ? newQuote : q)) : [...existing, newQuote];
+      nextList.sort((a, b) => (a.unit_price ?? 999999) - (b.unit_price ?? 999999));
+      return { ...prev, [productId]: nextList };
+    });
+
+    // 2. INSTANT OPTIMISTIC MAIN ROW UPDATE
+    setItems((prev) =>
+      prev.map((row) => {
+        if (row.product_id === productId) {
+          const isNewBest = row.best_price == null || priceNum <= row.best_price;
+          const wasLinked = supplierQuotes[productId]?.some((q) => q.supplier_id === suppId);
+          const newCount = wasLinked ? row.supplier_count : (row.supplier_count || 0) + 1;
+          return {
+            ...row,
+            best_price: isNewBest ? priceNum : row.best_price,
+            best_currency: isNewBest ? curr : row.best_currency,
+            primary_supplier_id: isNewBest ? suppId : row.primary_supplier_id,
+            primary_supplier_name: isNewBest ? resolvedSuppName : row.primary_supplier_name,
+            supplier_count: newCount,
+          };
+        }
+        return row;
+      })
+    );
+
+    // 3. Clear inputs immediately
+    setSubTableSupplierId((prev) => ({ ...prev, [productId]: "" }));
+    setSubTablePrice((prev) => ({ ...prev, [productId]: "" }));
+    setSubTableMoq((prev) => ({ ...prev, [productId]: "" }));
+    setSuccess("Supplier quote added successfully");
+    setTimeout(() => setSuccess(null), 3000);
+
+    // 4. Background Sync with Server
     setSubTableSaving((prev) => ({ ...prev, [productId]: true }));
     try {
       await apiPost("/inventory/product-prices/assign", {
@@ -420,21 +536,12 @@ export function ProductPricesPage() {
         supplier_id: suppId,
         unit_price: priceNum,
         currency: curr,
-        moq: moqStr ? parseFloat(moqStr) : null,
+        moq: moqVal,
       });
-
-      // Clear inputs
-      setSubTableSupplierId((prev) => ({ ...prev, [productId]: "" }));
-      setSubTablePrice((prev) => ({ ...prev, [productId]: "" }));
-      setSubTableMoq((prev) => ({ ...prev, [productId]: "" }));
-
-      setSuccess("Supplier quote added successfully");
-      setTimeout(() => setSuccess(null), 3000);
-
-      await loadProductSuppliers(productId);
-      fetchPrices();
+      loadProductSuppliers(productId);
     } catch (err) {
       alert("Failed to add supplier quote: " + (err instanceof Error ? err.message : String(err)));
+      fetchPrices();
     } finally {
       setSubTableSaving((prev) => ({ ...prev, [productId]: false }));
     }
@@ -452,41 +559,103 @@ export function ProductPricesPage() {
 
   const closeAssignModal = () => {
     setAssignModalProduct(null);
+    setAssignSubmitting(false);
   };
 
+  // Save Supplier Quote from Modal with Instant Optimistic UI
   const handleSaveAssignModal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!assignModalProduct) return;
-    setAssignSubmitting(true);
     if (!assignSupplierId) {
+      alert("Please select a supplier");
       return;
     }
     const cleanPrice = assignUnitPrice.replace(/[^0-9.]/g, "");
     const priceVal = parseFloat(cleanPrice);
     if (isNaN(priceVal) || priceVal < 0) {
+      alert("Please enter a valid unit price (>= 0)");
       return;
     }
-
     setAssignSubmitting(true);
+
+    const productId = assignModalProduct.product_id;
+    const suppId = assignSupplierId;
+    const curr = assignCurrency;
+    const moqVal = assignMoq ? parseFloat(assignMoq.replace(/[^0-9.]/g, "")) : null;
+    const notesVal = assignNotes.trim() || null;
+    const resolvedSuppName =
+      allSuppliers.find((s) => s.id === suppId)?.company_name ||
+      assignModalProduct.primary_supplier_name ||
+      "Supplier";
+
+    // 1. INSTANT OPTIMISTIC MAIN ROW UPDATE
+    setItems((prev) =>
+      prev.map((row) => {
+        if (row.product_id === productId) {
+          const isNewBest = row.best_price == null || priceVal <= row.best_price;
+          const wasLinked = supplierQuotes[productId]?.some((q) => q.supplier_id === suppId);
+          const newCount = wasLinked ? row.supplier_count : (row.supplier_count || 0) + 1;
+          return {
+            ...row,
+            best_price: isNewBest ? priceVal : row.best_price,
+            best_currency: isNewBest ? curr : row.best_currency,
+            primary_supplier_id: isNewBest ? suppId : row.primary_supplier_id,
+            primary_supplier_name: isNewBest ? resolvedSuppName : row.primary_supplier_name,
+            supplier_count: newCount,
+          };
+        }
+        return row;
+      })
+    );
+
+    // 2. INSTANT OPTIMISTIC SUB-TABLE UPDATE (if quotes were already opened)
+    setSupplierQuotes((prev) => {
+      const existing = prev[productId];
+      if (!existing) return prev;
+      const idx = existing.findIndex((q) => q.supplier_id === suppId);
+      const newQuote: SupplierQuote = {
+        link_id: idx >= 0 ? existing[idx].link_id : `temp-${Date.now()}`,
+        product_id: productId,
+        supplier_id: suppId,
+        supplier_name: resolvedSuppName,
+        supplier_code: null,
+        contact_calling_number: idx >= 0 ? existing[idx].contact_calling_number : null,
+        contact_whatsapp_number: idx >= 0 ? existing[idx].contact_whatsapp_number : null,
+        contact_wechat_number: idx >= 0 ? existing[idx].contact_wechat_number : null,
+        city_name: idx >= 0 ? existing[idx].city_name : null,
+        state_name: idx >= 0 ? existing[idx].state_name : null,
+        country_name: idx >= 0 ? existing[idx].country_name : null,
+        unit_price: priceVal,
+        currency: curr,
+        moq: moqVal,
+        notes: notesVal,
+        updated_at: new Date().toISOString(),
+        created_at: idx >= 0 ? existing[idx].created_at : new Date().toISOString(),
+      };
+      const nextList = idx >= 0 ? existing.map((q, i) => (i === idx ? newQuote : q)) : [...existing, newQuote];
+      nextList.sort((a, b) => (a.unit_price ?? 999999) - (b.unit_price ?? 999999));
+      return { ...prev, [productId]: nextList };
+    });
+
+    // 3. INSTANT CLOSE & SUCCESS NOTIFICATION
+    closeAssignModal();
+    setSuccess("Supplier and price assigned successfully");
+    setTimeout(() => setSuccess(null), 3000);
+
+    // 4. Background Sync with Server
     try {
       await apiPost("/inventory/product-prices/assign", {
-        product_id: assignModalProduct.product_id,
-        supplier_id: assignSupplierId,
+        product_id: productId,
+        supplier_id: suppId,
         unit_price: priceVal,
-        currency: assignCurrency,
-        moq: assignMoq ? parseFloat(assignMoq) : null,
-        notes: assignNotes.trim() || null,
+        currency: curr,
+        moq: moqVal,
+        notes: notesVal,
       });
-
-      setSuccess("Supplier and price assigned successfully");
-      setTimeout(() => setSuccess(null), 3000);
-      closeAssignModal();
-      fetchPrices();
-      if (expandedRows[assignModalProduct.product_id]) {
-        loadProductSuppliers(assignModalProduct.product_id);
-      }
+      loadProductSuppliers(productId);
     } catch (err) {
       alert("Failed to assign supplier: " + (err instanceof Error ? err.message : String(err)));
+      fetchPrices();
     } finally {
       setAssignSubmitting(false);
     }
@@ -841,8 +1010,9 @@ export function ProductPricesPage() {
 
                     return (
                       <Fragment key={row.product_id}>
-                        {/* Main Product Row */}
+                        {/* Main Product Row with Hover Pre-fetching */}
                         <tr
+                          onMouseEnter={() => prefetchProductSuppliers(row.product_id, row.supplier_count)}
                           style={{
                             background: isExpanded ? "#f1f5f9" : idx % 2 === 0 ? "#ffffff" : "#fafafa",
                             borderBottom: isExpanded ? "none" : "1px solid #e2e8f0",
@@ -1056,7 +1226,8 @@ export function ProductPricesPage() {
                                 <div>
                                   <button
                                     type="button"
-                                    onClick={() => toggleRowExpansion(row.product_id)}
+                                    onClick={() => toggleRowExpansion(row.product_id, row.supplier_count)}
+                                    onMouseEnter={() => prefetchProductSuppliers(row.product_id, row.supplier_count)}
                                     style={{
                                       background: isExpanded ? "#2563eb" : "#f1f5f9",
                                       color: isExpanded ? "#ffffff" : "#2563eb",
@@ -1085,6 +1256,7 @@ export function ProductPricesPage() {
                                 <button
                                   type="button"
                                   onClick={() => openAssignModal(row)}
+                                  onMouseEnter={() => prefetchProductSuppliers(row.product_id, row.supplier_count)}
                                   className="btn btn-tiny btn-outline"
                                   style={{ fontSize: "11px", padding: "2px 6px" }}
                                 >
@@ -1100,6 +1272,7 @@ export function ProductPricesPage() {
                               <button
                                 type="button"
                                 onClick={() => openAssignModal(row)}
+                                onMouseEnter={() => prefetchProductSuppliers(row.product_id, row.supplier_count)}
                                 className="btn btn-small btn-secondary"
                                 style={{ fontSize: "12px", padding: "4px 8px" }}
                                 title="Add another supplier quote for this product"
@@ -1108,7 +1281,8 @@ export function ProductPricesPage() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => toggleRowExpansion(row.product_id)}
+                                onClick={() => toggleRowExpansion(row.product_id, row.supplier_count)}
+                                onMouseEnter={() => prefetchProductSuppliers(row.product_id, row.supplier_count)}
                                 className="btn btn-small"
                                 style={{
                                   fontSize: "12px",

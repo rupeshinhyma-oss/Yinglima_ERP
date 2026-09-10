@@ -482,11 +482,15 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
 - **Optimized CTE Architecture (< 500ms):**
   - Paginated CTE isolates the 50 product rows first before joining supplier aggregates, delivering high performance across 3,500+ items without database timeouts.
   - Computes `best_price` (lowest quoting unit price), `primary_supplier_name`, and `supplier_count` in a single query.
+- **Instant 0ms Optimistic UI & Hover Pre-Fetching Performance Engine:**
+  - **Hover Pre-Fetching:** Moving the mouse cursor over table rows, `[ N Suppliers ▾ ]` badges, `+ Assign`, `+ Quote`, or `Compare ▾` buttons pre-caches quote data into memory 200–300ms before click (`prefetchProductSuppliers`), eliminating loading spinners and enabling instant 0ms accordion opening.
+  - **0ms Zero-Supplier Expansion:** If `supplier_count === 0`, the comparison drawer opens immediately with empty quotes and quick-add row with zero backend network requests.
+  - **Instant Optimistic Quote Creation & Assignment:** Saving a new quote (via modal or sub-table quick-add) updates React state in 0ms—immediately closing the modal, updating the best price badge, primary vendor, and supplier count, sorting quotes ASC, and triggering background server persistence with error rollback.
+  - **Instant 0ms Inline Editing & Deletion:** Modifying or deleting quotation prices updates the sub-table and recalculates the main row's lowest price badge in 0ms without requiring full 3,500-product table re-queries.
 - **Option 1 Expandable Sub-Table Comparison:**
   - Main row displays Product Photo, Name, Code, Category, Brand, Best Price badge (green if priced, amber if unpriced), and Primary Supplier with an interactive `[ N Suppliers ▾ ]` badge.
-  - Expanding a row fetches and renders a dedicated comparison sub-table detailing every vendor who quoted that SKU: Supplier Name, Location, Quoted Price, Currency, MOQ, Notes/Terms, and Quote Date.
+  - Expanding a row renders a dedicated comparison sub-table detailing every vendor who quoted that SKU: Supplier Name, Location, Quoted Price, Currency, MOQ, Notes/Terms, and Quote Date.
   - Includes an inline quick-add quote bar (`+ Add Another Supplier Quote:`) to link additional suppliers and prices directly within the table.
-- **Inline Price Editing:** Single-click on any unit price (in both the main table and the comparison sub-table) enables inline input editing with instant auto-save on `Enter` / checkmark click, auto-updating the lowest price in real time.
 - **Product Drawer Deep-Linking:** Clicking any product name or code opens the full `SideDrawer` displaying high-resolution photos, packaging dimensions (L x W x H cm), weights, auto-computed CBM, HSN code, refund VAT %, and required license/certificate alerts.
 - **Universal Bulk Import & Export:**
   - Excel (`.xlsx`) and CSV (`.csv`) export via `GET /api/v1/inventory/product-prices/export`.

@@ -473,8 +473,9 @@ Manage complete vendor team directory:
    - **Actions:**
      - `+ Quote` button (opens quick modal to link another supplier to this product).
      - `Compare ▾` / `Close ▴` toggle button.
-4. **Option 1 Expandable Sub-Table Comparison (Accordion):**
-   - Renders beneath the product row with smooth animation.
+4. **Option 1 Expandable Sub-Table Comparison (Accordion & 0ms Hover Pre-Fetching):**
+   - **Hover Pre-Fetching Engine:** Moving the cursor over any product table row (`<tr>`), supplier count badge `[ N Suppliers ▾ ]`, `+ Assign`, `+ Quote`, or `Compare ▾` button automatically triggers background pre-fetching (`prefetchProductSuppliers`) 200–300ms before click, caching quote data in React state.
+   - **0ms Instant Accordion Toggle:** Clicking `Compare ▾` or `[ N Suppliers ▾ ]` opens immediately (0ms) without waiting for server network latency or showing a loading spinner. If `supplier_count === 0`, it opens in 0ms with zero backend network requests.
    - Sub-table columns:
      - `Supplier Name`: Vendor company name, primary calling number (`📞`), WeChat ID (`💬`), and `BEST` green badge on lowest bidder.
      - `Location`: City, Province, Country.
@@ -483,12 +484,13 @@ Manage complete vendor team directory:
      - `MOQ`: Minimum Order Quantity (e.g. `50 pcs`).
      - `Notes / Terms`: Procurement remarks.
      - `Updated`: Formatted quotation date.
-     - `Actions`: `🗑️` Delete quote button with confirmation prompt.
+     - `Actions`: `🗑️` Delete quote button with confirmation prompt (optimistically removes row and recalculates best price in 0ms).
    - **Inline Quick-Add Row (`+ Add Another Supplier Quote:`):**
      - Supplier select dropdown + Unit Price input + Currency dropdown + MOQ input + `Save Quote` button.
-5. **Modal: Assign Supplier & Price Quote:**
+     - **0ms Optimistic Sub-Table Injection:** Instantly appends the new quote to the sub-table, sorts ASC, updates the main row's best price badge and supplier count in 0ms, clears inputs immediately, and synchronizes with server in the background.
+5. **Modal: Assign Supplier & Price Quote (0ms Optimistic UI):**
    - Form fields: Product Info summary banner, **Select Supplier Combobox** (Searchable autocomplete dropdown with instant type-to-filter, circular `✕` quick-clear button to wipe typed text/selection without manual backspacing, keyboard navigation, and auto-label resolution; *Required*), Unit Price (*Required*), Currency, MOQ, Notes/Remarks.
-   - Submit: `Save Supplier Quote` with button loading state.
+   - **Instant 0ms Optimistic Save:** Submitting valid form immediately closes the modal (0ms), renders a green success toast, updates the main product row (new best price, currency, primary vendor, and incremented supplier count), updates open sub-table quotes in memory, and performs background server sync with graceful rollback on error.
 6. **Modal: Bulk Import Product Prices:**
    - Sample template link: `📥 Download Sample Price Template (.xlsx)`.
    - Drag & drop or click-to-browse `.xlsx` file upload.
@@ -503,13 +505,13 @@ Manage complete vendor team directory:
 - [ ] **Category & Brand Filters**: Select a Category &rarr; verify Sub-Category dropdown auto-scopes &rarr; select a Brand &rarr; verify rows reflect selection.
 - [ ] **Pricing Status Filter**: Filter by `Priced Items Only` &rarr; verify only rows with quotes display; filter by `Unpriced Items Only` &rarr; verify rows show `+ Add Price`.
 - [ ] **Product Detail Drawer**: Click any product name or code &rarr; verify `SideDrawer` opens with full specs, dimensions, weights, CBM, and photo.
-- [ ] **Assign Modal**: Click `+ Add Price` or `+ Quote` &rarr; select a vendor, enter `125.00`, currency `CNY`, MOQ `10` &rarr; save &rarr; verify main row immediately updates with the price badge.
+- [ ] **Assign Modal 0ms Optimistic Save**: Click `+ Add Price` or `+ Quote` &rarr; select vendor, enter `125.00`, click Save &rarr; verify modal closes immediately (0ms), price badge and supplier update instantly on the main row without waiting for full catalog reload.
 - [ ] **Assign Modal Quick-Clear `✕`**: In the supplier search combobox, type any query or non-existent supplier &rarr; verify `✕` cross button appears inside the input &rarr; click `✕` &rarr; verify text and selection clear instantly, input stays focused, and full supplier list is restored.
-- [ ] **Inline Edit Main Row**: Click on the price badge `¥ 125.00` &rarr; enter `130.00`, press `Enter` &rarr; verify price updates immediately with success banner.
-- [ ] **Expand Comparison Sub-Table**: Click `[ 1 Supplier ▾ ]` or `Compare ▾` &rarr; verify sub-table expands showing supplier details, location, phone, WeChat, price, and MOQ.
-- [ ] **Sub-Table Inline Quick-Add**: Select a 2nd supplier, enter `110.00`, click `Save Quote` &rarr; verify sub-table adds the new quote with `BEST` badge, supplier count increases to `2 Suppliers`, and main row best price drops to `¥ 110.00`.
-- [ ] **Sub-Table Inline Edit**: Click price on any quote row in sub-table &rarr; edit value &rarr; press `Enter` &rarr; verify auto-save.
-- [ ] **Sub-Table Delete Quote**: Click `🗑️` on a quote &rarr; confirm prompt &rarr; verify quote removed and best price recalculates.
+- [ ] **Inline Edit Main Row (0ms)**: Click on the price badge `¥ 125.00` &rarr; enter `130.00`, press `Enter` &rarr; verify price badge and sub-table quote update immediately with success banner.
+- [ ] **Hover Pre-fetching & Instant Compare**: Hover cursor over a product row or `Compare ▾` button for 200ms &rarr; click `Compare ▾` &rarr; verify sub-table opens in 0ms with zero loading delay or spinner.
+- [ ] **Zero Supplier 0ms Open**: Click `Compare ▾` on an unpriced item with 0 suppliers &rarr; verify sub-table opens immediately with empty quotes table and quick-add row with zero backend network requests.
+- [ ] **Sub-Table Inline Quick-Add (0ms)**: Select a 2nd supplier, enter `110.00`, click `Save Quote` &rarr; verify sub-table immediately injects the new quote with `BEST` badge, supplier count increases to `2 Suppliers`, and main row best price drops to `¥ 110.00` without waiting for network roundtrip.
+- [ ] **Sub-Table Delete Quote (0ms)**: Click `🗑️` on a quote &rarr; confirm prompt &rarr; verify quote removed immediately and best price recalculates in 0ms.
 - [ ] **Excel & CSV Export**: Click `📊 Export Excel` and `📄 Export CSV` &rarr; verify downloaded files contain all columns and valid data.
 - [ ] **Bulk Import & Template**: Open `Bulk Import Prices` modal &rarr; click `Download Sample Price Template` &rarr; verify `.xlsx` template downloads with headers and examples &rarr; upload file &rarr; verify import summary.
 
