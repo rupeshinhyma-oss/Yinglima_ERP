@@ -49,7 +49,7 @@ class CompanyService:
         if cached is not None:
             return cached
         companies = await self.repository.list_all()
-        await self.cache_manager.set_dropdown(DROPDOWN_CACHE_NAME, companies)
+        await self.cache_manager.set_dropdown(DROPDOWN_CACHE_NAME, list(companies))
         return companies
 
     async def _invalidate_cache(self) -> None:

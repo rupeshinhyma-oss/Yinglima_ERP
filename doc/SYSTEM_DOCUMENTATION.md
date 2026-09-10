@@ -33,6 +33,8 @@
    - 8.12. [Recycle Bin (Universal Soft-Delete & Recovery)](#812-recycle-bin-universal-soft-delete--recovery)
    - 8.13. [Organization & System Profile](#813-organization--system-profile)
    - 8.14. [Employee Directory & Organization Structure](#814-employee-directory--organization-structure-identity--access-management-upgrade)
+   - 8.15. [Inquiries, Consignments & Bidirectional WeChat / Email RFQ Ingestion](#815-inquiries-consignments--bidirectional-wechat--email-rfq-ingestion)
+   - 8.16. [Product Price Directory & Supplier Comparison Engine](#816-product-price-directory--supplier-comparison-engine)
 
 9. [Real-Time WebSocket & Event Synchronization](#9-real-time-websocket--event-synchronization)
 10. [Multi-Tier Caching Engine](#10-multi-tier-caching-engine)
@@ -472,6 +474,25 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
   - **Supplier Thread Resolution:** Dynamic fallback lookup maps unlinked message sender emails to registered suppliers and prevents duplicate vendor dropdown entries.
   - **Inquiry Consignment Line-Items Export (`GET /inquiries/{id}/export`):** Exports all active line items of a consignment to Excel (`.xlsx`) or CSV (`.csv`) via `InquiryService.export_consignment`. Generates clean tabular spreadsheets with columns: `Sr No`, `Consignment Code`, `Buyer Company`, `Product Code`, `Product Name`, `Quantity`, `UOM`, `Brand Preference`, `Product Specs / Remarks`, `License Required`, `Item Status`, `Tally Entry Posted`, `Quotation Count`, `Best Quote Price`, `Best Quote Currency`, `Selected Supplier`, and `Procurement Remarks`. Automatically resolves the lowest or approved quotation bid per line item and logs immutable audit records (`AuditAction.EXPORT`).
 
+### 8.16. Product Price Directory & Supplier Comparison Engine
+- **Files:** `backend/app/masters/product_prices/` (`routes.py`, `service.py`, `repository.py`, `schemas.py`), `frontend/src/pages/ProductPrices.tsx`.
+- **Route Prefix:** `/api/v1/inventory/product-prices`.
+- **Frontend URL:** `/inventory/product-prices` (with aliases `/product-prices` and `/masters/product-prices`).
+- **Data Model:** Extends `SupplierProductLink` (`supplier_product_links`) with `unit_price` (Double Precision), `currency` (Varchar(10), default 'CNY'), `moq` (Double Precision), `notes` (Text), and `updated_at` (Timestamp with TZ).
+- **Optimized CTE Architecture (< 500ms):**
+  - Paginated CTE isolates the 50 product rows first before joining supplier aggregates, delivering high performance across 3,500+ items without database timeouts.
+  - Computes `best_price` (lowest quoting unit price), `primary_supplier_name`, and `supplier_count` in a single query.
+- **Option 1 Expandable Sub-Table Comparison:**
+  - Main row displays Product Photo, Name, Code, Category, Brand, Best Price badge (green if priced, amber if unpriced), and Primary Supplier with an interactive `[ N Suppliers ▾ ]` badge.
+  - Expanding a row fetches and renders a dedicated comparison sub-table detailing every vendor who quoted that SKU: Supplier Name, Location, Quoted Price, Currency, MOQ, Notes/Terms, and Quote Date.
+  - Includes an inline quick-add quote bar (`+ Add Another Supplier Quote:`) to link additional suppliers and prices directly within the table.
+- **Inline Price Editing:** Single-click on any unit price (in both the main table and the comparison sub-table) enables inline input editing with instant auto-save on `Enter` / checkmark click, auto-updating the lowest price in real time.
+- **Product Drawer Deep-Linking:** Clicking any product name or code opens the full `SideDrawer` displaying high-resolution photos, packaging dimensions (L x W x H cm), weights, auto-computed CBM, HSN code, refund VAT %, and required license/certificate alerts.
+- **Universal Bulk Import & Export:**
+  - Excel (`.xlsx`) and CSV (`.csv`) export via `GET /api/v1/inventory/product-prices/export`.
+  - Universal bulk Excel import via `POST /api/v1/inventory/product-prices/import` with in-memory product/supplier resolution, price validation, and error reporting.
+  - Sample template download via `GET /api/v1/inventory/product-prices/sample-template`.
+
 
 ---
 
@@ -607,6 +628,15 @@ A dedicated set of 8 pre-built, styled Excel workbooks (`.xlsx`) is maintained i
 | **Products**| `POST` | `/api/v1/products` | Create product record | `product.create` |
 | **Products**| `PATCH` | `/api/v1/products/{id}` | Update product & technical specs | `product.update` |
 | **Products**| `GET` | `/api/v1/products/{id}/datasheet-pdf` | Generate ReportLab PDF datasheet | `product.read` |
+| **Product Prices**| `GET` | `/api/v1/inventory/product-prices` | List products with best supplier prices (CTE paginated) | `product.view` |
+| **Product Prices**| `GET` | `/api/v1/inventory/product-prices/suppliers-lookup` | Fast lightweight supplier lookup for quote assignment | `product.view` |
+| **Product Prices**| `GET` | `/api/v1/inventory/product-prices/{id}/suppliers` | List all suppliers and quotes for a product | `product.view` |
+| **Product Prices**| `POST` | `/api/v1/inventory/product-prices/assign` | Assign or update supplier quote for a product | `product.update` |
+| **Product Prices**| `PATCH` | `/api/v1/inventory/product-prices/{link_id}` | Inline update price, currency, MOQ, or notes | `product.update` |
+| **Product Prices**| `DELETE` | `/api/v1/inventory/product-prices/{link_id}` | Delete supplier price quote | `product.update` |
+| **Product Prices**| `GET` | `/api/v1/inventory/product-prices/export` | Export price directory to Excel (.xlsx) or CSV | `product.export` |
+| **Product Prices**| `GET` | `/api/v1/inventory/product-prices/sample-template` | Download bulk price import template (.xlsx) | `product.import` |
+| **Product Prices**| `POST` | `/api/v1/inventory/product-prices/import` | Universal bulk import supplier prices from Excel | `product.import` |
 | **Suppliers**| `GET` | `/api/v1/suppliers` | List suppliers with multi-column sort | `supplier.read` |
 | **Suppliers**| `POST` | `/api/v1/suppliers` | Create supplier record | `supplier.create` |
 | **Suppliers**| `PATCH` | `/api/v1/suppliers/{id}` | Update supplier profile & bank details | `supplier.update` |

@@ -40,6 +40,7 @@ import { BuyerTypesPage } from "@/pages/masters/BuyerTypes";
 import { CategoriesPage } from "@/pages/masters/Categories";
 import { SubCategoriesPage } from "@/pages/masters/SubCategories";
 import { ProductsPage } from "@/pages/masters/Products";
+import { ProductPricesPage } from "@/pages/ProductPrices";
 import { NetworkStatusNotifier } from "@/components/NetworkStatusNotifier";
 import { LiveConnectionIndicator } from "@/components/LiveConnectionIndicator";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -111,6 +112,9 @@ export function App() {
           <Route path="/masters/categories" element={<CategoriesPage />} />
           <Route path="/masters/subcategories" element={<SubCategoriesPage />} />
           <Route path="/masters/products" element={<ProductsPage />} />
+          <Route path="/inventory/product-prices" element={<ProductPricesPage />} />
+          <Route path="/product-prices" element={<Navigate to="/inventory/product-prices" replace />} />
+          <Route path="/masters/product-prices" element={<Navigate to="/inventory/product-prices" replace />} />
           <Route path="/product-gallery" element={<ProductGalleryPage />} />
           <Route path="/product_gallery" element={<Navigate to="/product-gallery" replace />} />
 

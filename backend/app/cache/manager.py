@@ -34,7 +34,7 @@ like auth rate-limiting that predate this manager and use bespoke keys).
 from __future__ import annotations
 
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, TypeVar
 
 from app.cache.base import CacheBackend
@@ -292,7 +292,7 @@ class CacheManager:
         """Return cached dropdown/lookup options by name (e.g. 'countries', 'currencies')."""
         return await self.get(CacheBackend.build_key(NS_DROPDOWN, dropdown_name))
 
-    async def set_dropdown(self, dropdown_name: str, options: list[Any]) -> None:
+    async def set_dropdown(self, dropdown_name: str, options: Sequence[Any]) -> None:
         """Cache a dropdown/lookup option list under a given name."""
         await self.set(
             CacheBackend.build_key(NS_DROPDOWN, dropdown_name), options, ttl_seconds=TTL_DROPDOWN_DATA

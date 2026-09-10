@@ -28,7 +28,7 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -330,9 +330,16 @@ class SupplierProductLink(Base, UUIDPrimaryKeyMixin):
         GUID(), ForeignKey("products.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    unit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    currency: Mapped[str] = mapped_column(String(10), default="CNY", nullable=False)
+    moq: Mapped[float | None] = mapped_column(Float, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
 
     supplier: Mapped[Supplier] = relationship(back_populates="product_links")
 
     def __repr__(self) -> str:
         """Return a debug-friendly representation."""
-        return f"<SupplierProductLink supplier_id={self.supplier_id} product_id={self.product_id}>"
+        return f"<SupplierProductLink supplier_id={self.supplier_id} product_id={self.product_id} price={self.unit_price} {self.currency}>"

@@ -16,6 +16,7 @@
 5. [CONTACT: Buyers Module](#5-contact-buyers-module)
 6. [INVENTORY: Product Master Module](#6-inventory-product-master-module)
 7. [INVENTORY: Product Gallery Module](#7-inventory-product-gallery-module)
+7.1. [INVENTORY: Product Price Directory Module](#71-inventory-product-price-directory-module)
 8. [INVENTORY: Categories Master Module](#8-inventory-categories-master-module)
 9. [INVENTORY: Sub Categories Master Module](#9-inventory-sub-categories-master-module)
 10. [INVENTORY: Brands Master Module](#10-inventory-brands-master-module)
@@ -61,6 +62,7 @@
 | **CONTACT** | Suppliers | Direct | `/suppliers` | `suppliers` | `factory` | `supplier.view` |
 | **CONTACT** | Buyers | Direct | `/buyers` | `buyers` | `shoppingBag` | `buyer.view` |
 | **INVENTORY** | Product Master | Direct | `/masters/products` | `masters-products` | `box` | `product.view` |
+| **INVENTORY** | Product Prices | Direct | `/inventory/product-prices` | `product-prices` | `coins` | `product.view` |
 | **INVENTORY** | Product Gallery | Direct | `/product-gallery` | `product-gallery` | `image` | `productgallery.view` |
 | **SALE** | Inquiries | Direct | `/inquiries` | `inquiries` | `fileText` | Public Authenticated / `inquiry.view` |
 | **PLANNING** | Shipment Planning | Direct | `/planning` | `planning` | `truck` | `planning.view` |
@@ -430,6 +432,86 @@ Manage complete vendor team directory:
    - 💾 **Download Current Photo** button.
    - 📦 **Download All Media (ZIP / Batch)** button.
    - ✏️ **Quick Edit Product** button (opens side drawer).
+
+---
+
+## 7.1. INVENTORY: Product Price Directory Module
+
+- **Route:** `/inventory/product-prices` (Aliases: `/product-prices`, `/masters/product-prices`)
+- **Active Key:** `product-prices`
+- **Icon:** `coins`
+- **Required Permissions:** `product.view` (read), `product.update` (assign / inline edit), `product.export` (export), `product.import` (import)
+- **Purpose:** Procurement and sales pricing catalog showing lowest supplier quote per product, inline price updating, expandable vendor price comparisons, and universal bulk Excel import/export.
+
+### Visual Elements & Actions
+1. **Header & Summary:**
+   - Heading: `Product Price Directory`
+   - Total Counter Badge: `N Products`
+   - Action Buttons: `📊 Export Excel`, `📄 Export CSV`, `📥 Bulk Import Prices`, `🔄 Refresh`
+2. **Filters & Search Bar:**
+   - **Search Catalog Input:** Debounced (300ms) multi-attribute search matching product code, product name, Tally alias, barcode, or vendor company name.
+   - **Category Filter Dropdown:** All Categories or specific category filter.
+   - **Sub-Category Filter Dropdown:** Dynamic scoping to selected Category.
+   - **Brand Filter Dropdown:** All Brands or specific brand filter.
+   - **Pricing Status Dropdown:** `All Items`, `Priced Items Only`, `Unpriced Items Only`.
+3. **Main Table Columns:**
+   - **Sr. No.:** Global 1-indexed running number across pages `((page - 1) * pageSize + idx + 1)`.
+   - **Product Name & Code:**
+     - Product photo thumbnail.
+     - Product Name: Clickable link opening `Product Detail SideDrawer`.
+     - Product Code Badge (e.g. `DAR-01758`).
+     - Barcode (if present).
+   - **Category & Brand:** Category name, Brand name, and UOM code.
+   - **Best Price (Quote):**
+     - Formatted currency badge (e.g. `¥ 125.00` or `$ 16.50`).
+     - **Inline Editing:** Clicking/double-clicking turns badge into an inline number input. Pressing `Enter` or clicking `✓` automatically commits changes via `PATCH /api/v1/inventory/product-prices/{link_id}` with optimistic UI update. `Esc` cancels.
+     - Unpriced state: Amber button `+ Add Price` opening the Assign Quote modal.
+   - **Primary Supplier:**
+     - Lowest-price vendor name.
+     - Expandable Accordion Badge: `[ N Suppliers ▾ ]` toggling the comparison sub-table.
+     - Unpriced state: `—` with `+ Assign` button.
+   - **Actions:**
+     - `+ Quote` button (opens quick modal to link another supplier to this product).
+     - `Compare ▾` / `Close ▴` toggle button.
+4. **Option 1 Expandable Sub-Table Comparison (Accordion):**
+   - Renders beneath the product row with smooth animation.
+   - Sub-table columns:
+     - `Supplier Name`: Vendor company name, primary calling number (`📞`), WeChat ID (`💬`), and `BEST` green badge on lowest bidder.
+     - `Location`: City, Province, Country.
+     - `Quoted Price`: Formatted price, inline editable with click and auto-save!
+     - `Currency`: CNY, USD, EUR, INR.
+     - `MOQ`: Minimum Order Quantity (e.g. `50 pcs`).
+     - `Notes / Terms`: Procurement remarks.
+     - `Updated`: Formatted quotation date.
+     - `Actions`: `🗑️` Delete quote button with confirmation prompt.
+   - **Inline Quick-Add Row (`+ Add Another Supplier Quote:`):**
+     - Supplier select dropdown + Unit Price input + Currency dropdown + MOQ input + `Save Quote` button.
+5. **Modal: Assign Supplier & Price Quote:**
+   - Form fields: Product Info summary banner, **Select Supplier Combobox** (Searchable autocomplete dropdown with instant type-to-filter, circular `✕` quick-clear button to wipe typed text/selection without manual backspacing, keyboard navigation, and auto-label resolution; *Required*), Unit Price (*Required*), Currency, MOQ, Notes/Remarks.
+   - Submit: `Save Supplier Quote` with button loading state.
+6. **Modal: Bulk Import Product Prices:**
+   - Sample template link: `📥 Download Sample Price Template (.xlsx)`.
+   - Drag & drop or click-to-browse `.xlsx` file upload.
+   - Live import summary box: `✅ Created: N`, `🔄 Updated: N`, `❌ Failed: N`, with detailed error list and row numbers for invalid entries.
+7. **Product Detail SideDrawer:**
+   - Slides in from right upon clicking product name or code.
+   - High-resolution photo, Tally Name, Brand, Category, Sub-Category, HSN Code, UOM, Packaging Quantity, Refund VAT %, Packaging Net/Gross Weight, Dimensions (L x W x H cm), auto-computed Packaging Unit CBM, License Warning banner, and Technical Specifications.
+
+### Test Checklist for Quality Assurance
+- [ ] **Table Render**: Verify all 3,500+ products load smoothly under 1.5s with Sr. No., Product Name & Code, Category & Brand, Best Price, Primary Supplier, and Actions.
+- [ ] **Search Filter**: Type a product code (e.g. `DAR-01758`) or partial product name &rarr; verify table filters instantly.
+- [ ] **Category & Brand Filters**: Select a Category &rarr; verify Sub-Category dropdown auto-scopes &rarr; select a Brand &rarr; verify rows reflect selection.
+- [ ] **Pricing Status Filter**: Filter by `Priced Items Only` &rarr; verify only rows with quotes display; filter by `Unpriced Items Only` &rarr; verify rows show `+ Add Price`.
+- [ ] **Product Detail Drawer**: Click any product name or code &rarr; verify `SideDrawer` opens with full specs, dimensions, weights, CBM, and photo.
+- [ ] **Assign Modal**: Click `+ Add Price` or `+ Quote` &rarr; select a vendor, enter `125.00`, currency `CNY`, MOQ `10` &rarr; save &rarr; verify main row immediately updates with the price badge.
+- [ ] **Assign Modal Quick-Clear `✕`**: In the supplier search combobox, type any query or non-existent supplier &rarr; verify `✕` cross button appears inside the input &rarr; click `✕` &rarr; verify text and selection clear instantly, input stays focused, and full supplier list is restored.
+- [ ] **Inline Edit Main Row**: Click on the price badge `¥ 125.00` &rarr; enter `130.00`, press `Enter` &rarr; verify price updates immediately with success banner.
+- [ ] **Expand Comparison Sub-Table**: Click `[ 1 Supplier ▾ ]` or `Compare ▾` &rarr; verify sub-table expands showing supplier details, location, phone, WeChat, price, and MOQ.
+- [ ] **Sub-Table Inline Quick-Add**: Select a 2nd supplier, enter `110.00`, click `Save Quote` &rarr; verify sub-table adds the new quote with `BEST` badge, supplier count increases to `2 Suppliers`, and main row best price drops to `¥ 110.00`.
+- [ ] **Sub-Table Inline Edit**: Click price on any quote row in sub-table &rarr; edit value &rarr; press `Enter` &rarr; verify auto-save.
+- [ ] **Sub-Table Delete Quote**: Click `🗑️` on a quote &rarr; confirm prompt &rarr; verify quote removed and best price recalculates.
+- [ ] **Excel & CSV Export**: Click `📊 Export Excel` and `📄 Export CSV` &rarr; verify downloaded files contain all columns and valid data.
+- [ ] **Bulk Import & Template**: Open `Bulk Import Prices` modal &rarr; click `Download Sample Price Template` &rarr; verify `.xlsx` template downloads with headers and examples &rarr; upload file &rarr; verify import summary.
 
 ---
 

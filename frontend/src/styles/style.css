@@ -975,6 +975,28 @@ select::-ms-expand {
   overflow-y: auto;
 }
 
+.modal-dialog-card form > :not(.form-actions):not(.modal-footer) {
+  flex: none;
+  min-height: auto;
+  overflow: visible;
+}
+
+.modal-dialog-card.modal-overflow-visible {
+  overflow: visible !important;
+}
+
+.modal-dialog-card.modal-overflow-visible form {
+  overflow: visible !important;
+  max-height: none !important;
+}
+
+.modal-dialog-card.modal-overflow-visible form > :not(.form-actions):not(.modal-footer),
+.modal-dialog-card.modal-overflow-visible form > * {
+  overflow: visible !important;
+  flex: none !important;
+  min-height: auto !important;
+}
+
 /* ==========================================================================
    Tables
    ========================================================================== */

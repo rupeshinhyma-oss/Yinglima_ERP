@@ -28,6 +28,7 @@ from app.masters.currencies.routes import router as currencies_router
 from app.masters.hsn.routes import router as hsn_router
 from app.masters.product_categories.routes import router as product_categories_router
 from app.masters.product_sub_categories.routes import router as product_sub_categories_router
+from app.masters.product_prices.routes import router as product_prices_router
 from app.masters.products.routes import router as products_router
 from app.masters.states.routes import router as states_router
 from app.masters.buyer_types.routes import router as buyer_types_router
@@ -89,6 +90,7 @@ api_router.include_router(brands_router)
 api_router.include_router(product_categories_router)
 api_router.include_router(product_sub_categories_router)
 api_router.include_router(products_router)
+api_router.include_router(product_prices_router)
 api_router.include_router(company_list_router)
 api_router.include_router(supplier_types_router)
 api_router.include_router(buyer_types_router)

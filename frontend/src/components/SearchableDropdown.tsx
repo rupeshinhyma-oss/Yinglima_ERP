@@ -74,6 +74,7 @@ export function SearchableDropdown({
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resolvedFor = useRef<string | null>(null);
   const isUserTyping = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const fetchLabelRef = useRef(fetchLabelForValue);
   fetchLabelRef.current = fetchLabelForValue;
 
@@ -162,6 +163,25 @@ export function SearchableDropdown({
     }, 150);
   }
 
+  function handleClear() {
+    if (disabled) return;
+    isUserTyping.current = false;
+    resolvedFor.current = null;
+    setInputValue("");
+    setLabel("");
+    if (onTextChange) onTextChange("");
+    onChange(null, "");
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+    void search.run(async (signal) => {
+      const found = await fetchOptions("", signal);
+      setOptions(found || []);
+      setActiveIndex(-1);
+      setOpen(true);
+    }, 0);
+  }
+
   function handleFocus(e: React.FocusEvent<HTMLInputElement>) {
     if (disabled) return;
     try {
@@ -243,8 +263,9 @@ export function SearchableDropdown({
     !options.some((o) => o.label.toLowerCase() === inputValue.trim().toLowerCase());
 
   return (
-    <div className="sd-wrap" style={{ position: "relative" }}>
+    <div className="sd-wrap" style={{ position: "relative", zIndex: open ? 100 : 1 }}>
       <input
+        ref={inputRef}
         type="text"
         id={id}
         disabled={disabled}
@@ -252,7 +273,7 @@ export function SearchableDropdown({
         style={{
           border: hasError ? "1.5px solid #ef4444" : undefined,
           boxShadow: hasError ? "0 0 0 3px rgba(239, 68, 68, 0.15)" : undefined,
-          paddingRight: "30px",
+          paddingRight: !disabled && inputValue ? "56px" : "30px",
           ...(disabled
             ? {
                 background: "#f8fafc",
@@ -272,63 +293,130 @@ export function SearchableDropdown({
         onKeyDown={handleKeyDown}
         onBlur={handleBlur}
       />
-      <button
-        type="button"
-        tabIndex={-1}
-        aria-label="Toggle options"
-        disabled={disabled}
-        onMouseDown={(e) => {
-          e.preventDefault();
-        }}
-        onClick={(e) => {
-          e.preventDefault();
-          if (disabled) return;
-          if (open) {
-            closeResults();
-          } else {
-            void search.run(async (signal) => {
-              const found = await fetchOptions("", signal);
-              setOptions(found || []);
-              setActiveIndex(-1);
-              setOpen(true);
-            }, 0);
-          }
-        }}
+      <div
         style={{
           position: "absolute",
           right: "8px",
           top: "50%",
           transform: "translateY(-50%)",
-          background: "transparent",
-          border: "none",
-          cursor: disabled ? "not-allowed" : "pointer",
-          color: "#94a3b8",
           display: "flex",
           alignItems: "center",
-          justifyContent: "center",
-          padding: "4px",
-          lineHeight: 1,
+          gap: "4px",
+          zIndex: 2,
         }}
       >
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 20 20"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+        {!disabled && Boolean(inputValue) && (
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label="Clear input"
+            title="Clear search"
+            onMouseDown={(e) => {
+              e.preventDefault();
+            }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleClear();
+            }}
+            style={{
+              background: "#e2e8f0",
+              border: "none",
+              borderRadius: "50%",
+              width: "18px",
+              height: "18px",
+              cursor: "pointer",
+              color: "#64748b",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "10px",
+              fontWeight: 700,
+              lineHeight: 1,
+              padding: 0,
+              transition: "all 0.15s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#cbd5e1";
+              e.currentTarget.style.color = "#0f172a";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "#e2e8f0";
+              e.currentTarget.style.color = "#64748b";
+            }}
+          >
+            ✕
+          </button>
+        )}
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label="Toggle options"
+          disabled={disabled}
+          onMouseDown={(e) => {
+            e.preventDefault();
+          }}
+          onClick={(e) => {
+            e.preventDefault();
+            if (disabled) return;
+            if (open) {
+              closeResults();
+            } else {
+              void search.run(async (signal) => {
+                const found = await fetchOptions("", signal);
+                setOptions(found || []);
+                setActiveIndex(-1);
+                setOpen(true);
+              }, 0);
+            }
+          }}
           style={{
-            transition: "transform 0.15s ease",
-            transform: open ? "rotate(180deg)" : "rotate(0deg)",
+            background: "transparent",
+            border: "none",
+            cursor: disabled ? "not-allowed" : "pointer",
+            color: "#94a3b8",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "4px",
+            lineHeight: 1,
           }}
         >
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-      </button>
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{
+              transition: "transform 0.15s ease",
+              transform: open ? "rotate(180deg)" : "rotate(0deg)",
+            }}
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+      </div>
       {open && (
-        <div className="sd-results">
+        <div
+          className="sd-results"
+          style={{
+            position: "absolute",
+            top: "calc(100% + 4px)",
+            left: 0,
+            right: 0,
+            zIndex: 1000,
+            background: "#ffffff",
+            border: "1px solid #cbd5e1",
+            borderRadius: "6px",
+            maxHeight: "240px",
+            overflowY: "auto",
+            boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1)",
+          }}
+        >
           {options.length === 0 && !showCustomOption && !onCreateNew ? (
             <div className="sd-empty">No matches.</div>
           ) : (

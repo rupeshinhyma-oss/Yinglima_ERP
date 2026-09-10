@@ -50,6 +50,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "INVENTORY",
     items: [
       { key: "masters-products", label: "Product Master", path: "/masters/products", icon: "box", permission: "product.view" },
+      { key: "product-prices", label: "Product Prices", path: "/inventory/product-prices", icon: "coins", permission: "product.view" },
       { key: "product-gallery", label: "Product Gallery", path: "/product-gallery", icon: "image", permission: "productgallery.view" },
     ],
   },
@@ -135,6 +136,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "masters-categories": "Categories",
   "masters-subcategories": "Sub Categories",
   "masters-products": "Product Master",
+  "product-prices": "Product Prices",
   suppliers: "Suppliers",
   audit: "Audit Log",
   rbac: "Departments & Permissions",
