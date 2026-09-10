@@ -161,14 +161,6 @@ export function ProductsPage() {
     current: null,
   }))[0];
 
-  const lookupsReady = [
-    categories.loaded,
-    subCategories.loaded,
-    brands.loaded,
-    hsnCodes.loaded,
-    uoms.loaded,
-    organizations.loaded,
-  ].join("-");
 
   const scopedFilterSubCategories = categoryFilter
     ? subCategories.items.filter((sc) => sc.category_id === categoryFilter)
@@ -256,59 +248,13 @@ export function ProductsPage() {
       bulkActionPermission="product.bulk_action"
       liveModule="inventory"
       entityName="product"
-      clientSideSearch={true}
-      customSearchMatcher={(p: Product, term: string, cleanTerm: string) => {
-        const brand = brands.items.find((x) => x.id === p.brand_id);
-        const cat = categories.items.find((x) => x.id === p.category_id);
-        const subCat = subCategories.items.find((x) => x.id === p.sub_category_id);
-        const hsn = hsnCodes.items.find((x) => x.id === p.hsn_id);
-        const uom = uoms.items.find((x) => x.id === p.uom_id);
-
-        const orgIds = p.organization_ids && p.organization_ids.length > 0
-          ? p.organization_ids
-          : (p.organization_id ? [p.organization_id] : []);
-        const orgNames = orgIds
-          .map((id: string) => organizations.items.find((x) => x.id === id)?.name)
-          .filter(Boolean);
-
-        const searchBlob = [
-          p.product_name,
-          p.product_name_tally,
-          p.product_name_invoice,
-          p.product_code,
-          p.barcode,
-          p.description,
-          p.specification,
-          p.material,
-          p.color,
-          brand?.name,
-          brand?.code,
-          cat?.name,
-          cat?.code,
-          subCat?.name,
-          subCat?.code,
-          hsn?.code,
-          hsn?.description,
-          uom?.name,
-          uom?.code,
-          uom?.short_name,
-          ...orgNames,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-
-        return (
-          searchBlob.includes(term) ||
-          searchBlob.replace(/[\s-]/g, "").includes(cleanTerm)
-        );
-      }}
+      clientSideSearch={false}
       heading="Products Master"
       subtitle="Manage items, packaging weights, CBM, refund VAT, and license warnings."
       breadcrumbTrail={["Master Data", "Products"]}
       newButtonLabel="+ New Product"
-      searchPlaceholder="Search code, name, or barcode or Sr. No..."
-      reloadToken={`${lookupsReady}-${liveReloadToken}`}
+      searchPlaceholder="Search code, name, barcode, or Sr. No..."
+      reloadToken={String(liveReloadToken)}
       onItemsLoaded={setCatalogProducts}
       useFullPageForm={true}
       hideQuickAdd={true}

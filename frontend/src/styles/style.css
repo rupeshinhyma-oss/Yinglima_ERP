@@ -236,6 +236,25 @@ svg {
   opacity: 1;
 }
 
+.nav-item.active-parent {
+  color: #0061f2;
+  font-weight: 600;
+}
+
+.nav-item.active-parent svg {
+  color: #0061f2;
+  opacity: 1;
+}
+
+.nav-sub-item:hover {
+  background: #eff6ff !important;
+  color: #0061f2 !important;
+}
+
+.sidebar.collapsed .nav-sub-items {
+  display: none !important;
+}
+
 .nav-item .nav-badge {
   margin-left: auto;
   background: rgba(255, 255, 255, 0.15);

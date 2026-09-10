@@ -1,7 +1,7 @@
 # Enterprise ERP System — Unified Architecture, Feature & Technical Manual
 
 > **System Version:** 1.1.0 (Production)  
-> **Last Updated:** September 10, 2026 (Inquiry Lifecycle Tabs & Bulk Actions Engine across Companies and Consignments views; matching Product Master pattern; zero regression)  
+> **Last Updated:** September 10, 2026 (Consolidated Collapsible Masters Accordion in Sidebar; Top-level Inquiries, Products, Suppliers & Buyers; Inquiry Lifecycle Tabs & Bulk Actions; zero regression)  
 > **Repository:** `https://github.com/rupeshinhyma-oss/Yinglima_ERP.git`  
 > **Architectural Pattern:** Modular Async Monolith (FastAPI) + React 18 SPA (Vite) + Real-Time WebSocket Event Bus  
 > **Target Audience:** Systems Architects, Software Engineers, DevOps, and Autonomous AI Coding Assistants.  
@@ -796,10 +796,14 @@ VITE_WS_BASE_URL=ws://localhost:8000/api/v1/events/ws
 - **Client-Side Deep-Linking (`UniversalSearch.tsx`)**: Clicking a search result carries the matched record's UUID via query parameter (e.g. `/suppliers?id=8973e972-...`, `/buyers?id=...`, `/masters/products?id=...`, `/users?id=...`, `/inquiries?buyerId=...&inquiryId=...`, `/trash?q=...`).
 - **Automatic Drawer & Modal Invocation**: Destination pages (`Suppliers.tsx`, `Buyers.tsx`, `Users.tsx`, `masters/Products.tsx`, `Inquiries.tsx`, `Trash.tsx`, and `MasterPage.tsx` for shared masters) detect parameters on mount or route transition and open corresponding views/drawers automatically.
 
-### Global Paste Auto-Clean Sanitizer (`lib/pasteSanitizer.ts`)
-- **System-Wide Clipboard Interceptor**: Listens globally to all paste events on HTML `<input>` and `<textarea>` elements across all forms, tables, search bars, and modals.
-- **Artifact Stripping**: Automatically strips leading and trailing spaces, tab characters (`\t`), newlines (`\n`), and non-breaking space characters (`\u00A0`) captured when copying cells from Excel, PDFs, or web tables.
-- **Native React State Dispatch**: Seamlessly triggers React's synthetic `onChange` and `input` events so form state updates immediately without manual backspacing. Excludes password and file upload inputs.
+### Collapsible Masters Navigation Sub-Menu Architecture (`lib/nav.ts`, `components/AppShell.tsx`)
+- **Top-Level Clean Workspace**: Consolidates 12 lookup and catalog configuration masters (`Cities`, `Provinces/States`, `Countries`, `Currencies`, `UOM`, `HSN Codes`, `Categories`, `Sub Categories`, `Brands`, `Supplier Types`, `Buyer Types`, and `Organization List`) into an expandable/collapsible **`Masters ▾`** accordion menu under `SETTINGS`.
+- **Protected Primary Business Modules**: Primary daily operational tools remain directly accessible as top-level sidebar items:
+  - `Inquiries` under `SALE`
+  - `Product Master` and `Product Gallery` under `INVENTORY`
+  - `Suppliers` and `Buyers` under `CONTACT`
+- **Smart Auto-Expansion**: The sidebar inspects the active route on mount and navigation; if the user accesses any master page, the `Masters` group automatically expands and highlights the active sub-item.
+- **Responsive Collapse Mode**: Fully compatible with the 72px icon-collapsed sidebar state (`sidebarCollapsed`). Clicking the group icon expands the sidebar and group seamlessly.
 
 ---
-*Maintained and verified for Inhyma Solutions Enterprise ERP. Last updated: September 8, 2026 (Merged: Permanent User Deletion Retirement, Account Deactivation Policy & Bulk Deactivation, Unified Edit Profile with Integrated Department Management, Real-Time Force Logout, Isolated 1-on-1 RFQ Supplier Email Dispatch, WeChat/WeCom Automated AI Quotation Extraction, Inquiry Line-Item Export, Smart Hybrid Real-Time & Fallback Sync, and 100% Supabase-to-Neon Data Parity Migration).*
+*Maintained and verified for Inhyma Solutions Enterprise ERP. Last updated: September 10, 2026 (Consolidated Collapsible Masters Accordion in Sidebar; Top-level Inquiries, Products, Suppliers & Buyers; Inquiry Lifecycle Tabs & Bulk Actions; zero regression).*

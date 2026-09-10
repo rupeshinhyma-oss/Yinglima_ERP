@@ -8,13 +8,23 @@
 
 import type { IconKey } from "@/components/icons";
 
-export interface NavItem {
+export interface NavSubItem {
   key: string;
   label: string;
   path: string;
+  icon?: IconKey;
+  permission?: string;
+  superAdminOnly?: boolean;
+}
+
+export interface NavItem {
+  key: string;
+  label: string;
+  path?: string;
   icon: IconKey;
   permission?: string;
   superAdminOnly?: boolean;
+  children?: NavSubItem[];
 }
 
 export interface NavSection {
@@ -41,25 +51,11 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { key: "masters-products", label: "Product Master", path: "/masters/products", icon: "box", permission: "product.view" },
       { key: "product-gallery", label: "Product Gallery", path: "/product-gallery", icon: "image", permission: "productgallery.view" },
-      { key: "masters-categories", label: "Categories", path: "/masters/categories", icon: "layers", permission: "category.view" },
-      { key: "masters-subcategories", label: "Sub Categories", path: "/masters/subcategories", icon: "folderTree", permission: "subcategory.view" },
-      { key: "masters-brands", label: "Brands", path: "/masters/brands", icon: "award", permission: "brand.view" },
-      { key: "masters-supplier-types", label: "Supplier Types", path: "/masters/supplier-types", icon: "network", permission: "suppliertype.view" },
-      { key: "masters-buyer-types", label: "Buyer Types", path: "/masters/buyer-types", icon: "idCard", permission: "buyertype.view" },
     ],
   },
-
   {
     label: "SALE",
     items: [
-      // Bug fix: this key used to be "proforma" while Inquiries.tsx passes
-      // <AppShell activeKey="inquiries">, and Sidebar only highlights a nav
-      // item when `item.key === activeKey` matches exactly (see
-      // AppShell.tsx's `nav-item ${item.key === activeKey ? "active" : ""}`).
-      // The mismatch meant this item's row/icon never got the active
-      // highlight or auto-scroll-into-view, even while on the Inquiries
-      // page -- every other nav item's key already matches its page's
-      // activeKey (e.g. "masters-buyer-types"), so this brings it in line.
       { key: "inquiries", label: "Inquiries", path: "/inquiries", icon: "fileText" },
     ],
   },
@@ -78,16 +74,28 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    label: "CONFIGURATIONS",
+    label: "SETTINGS",
     items: [
-      { key: "masters-hsn", label: "HSN Codes", path: "/masters/hsn", icon: "barcode", permission: "hsn.view" },
-      { key: "masters-countries", label: "Countries", path: "/masters/countries", icon: "globe", permission: "country.view" },
-      { key: "masters-states", label: "Provinces", path: "/masters/states", icon: "map", permission: "state.view" },
-      { key: "masters-cities", label: "City", path: "/masters/cities", icon: "pin", permission: "city.view" },
-      { key: "masters-currencies", label: "Currencies", path: "/masters/currencies", icon: "coins", permission: "currency.view" },
-      { key: "masters-uom", label: "Units of Measurement", path: "/masters/uom", icon: "ruler", permission: "uom.view" },
+      {
+        key: "masters-group",
+        label: "Masters",
+        icon: "masters",
+        children: [
+          { key: "masters-cities", label: "Cities", path: "/masters/cities", permission: "city.view" },
+          { key: "masters-states", label: "Provinces", path: "/masters/states", permission: "state.view" },
+          { key: "masters-countries", label: "Countries", path: "/masters/countries", permission: "country.view" },
+          { key: "masters-currencies", label: "Currencies", path: "/masters/currencies", permission: "currency.view" },
+          { key: "masters-uom", label: "Units of Measurement", path: "/masters/uom", permission: "uom.view" },
+          { key: "masters-hsn", label: "HSN Codes", path: "/masters/hsn", permission: "hsn.view" },
+          { key: "masters-categories", label: "Categories", path: "/masters/categories", permission: "category.view" },
+          { key: "masters-subcategories", label: "Sub Categories", path: "/masters/subcategories", permission: "subcategory.view" },
+          { key: "masters-brands", label: "Brands", path: "/masters/brands", permission: "brand.view" },
+          { key: "masters-supplier-types", label: "Supplier Types", path: "/masters/supplier-types", permission: "suppliertype.view" },
+          { key: "masters-buyer-types", label: "Buyer Types", path: "/masters/buyer-types", permission: "buyertype.view" },
+          { key: "masters-company-list", label: "Organization List", path: "/masters/company-list", permission: "organizationlist.view" },
+        ],
+      },
       { key: "organization", label: "Organization Settings", path: "/organization", icon: "settings", permission: "organization.manage" },
-      { key: "masters-company-list", label: "Organization List", path: "/masters/company-list", icon: "building", permission: "organizationlist.view" },
       { key: "audit", label: "Audit Log", path: "/audit", icon: "clock", permission: "audit.view" },
       { key: "trash", label: "Trash", path: "/trash", icon: "trash", permission: "trash.view" },
     ],
@@ -139,14 +147,19 @@ export const PAGE_TITLES: Record<string, string> = {
 export const DEFAULT_BRAND_NAME = "YINGLIMA";
 
 /** Flat lookup of every nav item by key, for the page-access check. */
-export const NAV_ITEMS_BY_KEY: Record<string, NavItem> = NAV_SECTIONS.reduce(
+export const NAV_ITEMS_BY_KEY: Record<string, NavItem | NavSubItem> = NAV_SECTIONS.reduce(
   (acc, section) => {
     section.items.forEach((item) => {
       acc[item.key] = item;
+      if (item.children) {
+        item.children.forEach((child) => {
+          acc[child.key] = child;
+        });
+      }
     });
     return acc;
   },
-  {} as Record<string, NavItem>
+  {} as Record<string, NavItem | NavSubItem>
 );
 
 /**

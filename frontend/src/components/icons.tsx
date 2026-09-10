@@ -463,6 +463,33 @@ export function IconKanbanView(props: IconProps) {
   );
 }
 
+export function IconChevronDown(props: IconProps) {
+  return (
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}
+
+export function IconChevronRight(props: IconProps) {
+  return (
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <polyline points="9 18 15 12 9 6" />
+    </svg>
+  );
+}
+
+export function IconUserPlus(props: IconProps) {
+  return (
+    <NavSvg {...props}>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <line x1="19" y1="8" x2="19" y2="14" />
+      <line x1="22" y1="11" x2="16" y2="11" />
+    </NavSvg>
+  );
+}
+
 /** Icon lookup by the string keys the nav config uses. */
 export const ICONS = {
   dashboard: IconDashboard,
@@ -490,6 +517,10 @@ export const ICONS = {
   building: IconBuilding,
   clock: IconClock,
   trash: IconTrash,
+  chevronDown: IconChevronDown,
+  chevronRight: IconChevronRight,
+  userPlus: IconUserPlus,
+  masters: IconUserPlus,
   // legacy aliases for backward compatibility
   tag: IconTag,
   briefcase: IconBriefcase,

@@ -55,34 +55,45 @@
 
 ## 2. Master Navigation Sitemap
 
-| Sidebar Section | Navigation Label | Route Path | Active Key | Icon Key | Required Permission |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **DASHBOARD** | Dashboard | `/dashboard` | `dashboard` | `dashboard` | Public Authenticated |
-| **CONTACT** | Suppliers | `/suppliers` | `suppliers` | `factory` | `supplier.view` |
-| **CONTACT** | Buyers | `/buyers` | `buyers` | `shoppingBag` | `buyer.view` |
-| **INVENTORY** | Product Master | `/masters/products` | `masters-products` | `box` | `product.view` |
-| **INVENTORY** | Product Gallery | `/product-gallery` | `product-gallery` | `image` | `productgallery.view` |
-| **INVENTORY** | Categories | `/masters/categories` | `masters-categories` | `layers` | `category.view` |
-| **INVENTORY** | Sub Categories | `/masters/subcategories` | `masters-subcategories` | `folderTree` | `subcategory.view` |
-| **INVENTORY** | Brands | `/masters/brands` | `masters-brands` | `award` | `brand.view` |
-| **INVENTORY** | Supplier Types | `/masters/supplier-types` | `masters-supplier-types` | `network` | `suppliertype.view` |
-| **INVENTORY** | Buyer Types | `/masters/buyer-types` | `masters-buyer-types` | `idCard` | `buyertype.view` |
-| **SALE** | Inquiries | `/inquiries` | `inquiries` | `fileText` | Public Authenticated / `inquiry.view` |
-| **PLANNING** | Shipment Planning | `/planning` | `planning` | `truck` | `planning.view` |
-| **USER MANAGEMENT** | Users | `/users` | `users` | `user` | `user.view` |
-| **USER MANAGEMENT** | Positions | `/positions` | `positions` | `briefcase` | `position.view` |
-| **USER MANAGEMENT** | Organization Chart | `/org-chart` | `org-chart` | `orgChart` | `reporting.view` |
-| **USER MANAGEMENT** | Departments & Permissions | `/rbac` | `rbac` | `shield` | `roles_permissions.view` |
-| **CONFIGURATIONS** | HSN Codes | `/masters/hsn` | `masters-hsn` | `barcode` | `hsn.view` |
-| **CONFIGURATIONS** | Countries | `/masters/countries` | `masters-countries` | `globe` | `country.view` |
-| **CONFIGURATIONS** | Provinces | `/masters/states` | `masters-states` | `map` | `state.view` |
-| **CONFIGURATIONS** | City | `/masters/cities` | `masters-cities` | `pin` | `city.view` |
-| **CONFIGURATIONS** | Currencies | `/masters/currencies` | `masters-currencies` | `coins` | `currency.view` |
-| **CONFIGURATIONS** | Units of Measurement | `/masters/uom` | `masters-uom` | `ruler` | `uom.view` |
-| **CONFIGURATIONS** | Organization Settings | `/organization` | `organization` | `settings` | `organization.manage` |
-| **CONFIGURATIONS** | Organization List | `/masters/company-list` | `masters-company-list` | `building` | `organizationlist.view` |
-| **CONFIGURATIONS** | Audit Log | `/audit` | `audit` | `clock` | `audit.view` |
-| **CONFIGURATIONS** | Trash | `/trash` | `trash` | `trash` | `trash.view` |
+| Sidebar Section | Navigation Label | Sub-Menu / Type | Route Path | Active Key | Icon Key | Required Permission |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **DASHBOARD** | Dashboard | Direct | `/dashboard` | `dashboard` | `dashboard` | Public Authenticated |
+| **CONTACT** | Suppliers | Direct | `/suppliers` | `suppliers` | `factory` | `supplier.view` |
+| **CONTACT** | Buyers | Direct | `/buyers` | `buyers` | `shoppingBag` | `buyer.view` |
+| **INVENTORY** | Product Master | Direct | `/masters/products` | `masters-products` | `box` | `product.view` |
+| **INVENTORY** | Product Gallery | Direct | `/product-gallery` | `product-gallery` | `image` | `productgallery.view` |
+| **SALE** | Inquiries | Direct | `/inquiries` | `inquiries` | `fileText` | Public Authenticated / `inquiry.view` |
+| **PLANNING** | Shipment Planning | Direct | `/planning` | `planning` | `truck` | `planning.view` |
+| **USER MANAGEMENT** | Users | Direct | `/users` | `users` | `user` | `user.view` |
+| **USER MANAGEMENT** | Positions | Direct | `/positions` | `positions` | `briefcase` | `position.view` |
+| **USER MANAGEMENT** | Departments & Permissions | Direct | `/rbac` | `rbac` | `shield` | `roles_permissions.view` |
+| **SETTINGS** | **Masters ▾** | **Accordion Parent** | *(Collapsible)* | `masters-group` | `masters` | Dynamic based on children |
+| *SETTINGS / Masters* | Cities | Sub-Item | `/masters/cities` | `masters-cities` | — | `city.view` |
+| *SETTINGS / Masters* | Provinces | Sub-Item | `/masters/states` | `masters-states` | — | `state.view` |
+| *SETTINGS / Masters* | Countries | Sub-Item | `/masters/countries` | `masters-countries` | — | `country.view` |
+| *SETTINGS / Masters* | Currencies | Sub-Item | `/masters/currencies` | `masters-currencies` | — | `currency.view` |
+| *SETTINGS / Masters* | Units of Measurement | Sub-Item | `/masters/uom` | `masters-uom` | — | `uom.view` |
+| *SETTINGS / Masters* | HSN Codes | Sub-Item | `/masters/hsn` | `masters-hsn` | — | `hsn.view` |
+| *SETTINGS / Masters* | Categories | Sub-Item | `/masters/categories` | `masters-categories` | — | `category.view` |
+| *SETTINGS / Masters* | Sub Categories | Sub-Item | `/masters/subcategories` | `masters-subcategories` | — | `subcategory.view` |
+| *SETTINGS / Masters* | Brands | Sub-Item | `/masters/brands` | `masters-brands` | — | `brand.view` |
+| *SETTINGS / Masters* | Supplier Types | Sub-Item | `/masters/supplier-types` | `masters-supplier-types` | — | `suppliertype.view` |
+| *SETTINGS / Masters* | Buyer Types | Sub-Item | `/masters/buyer-types` | `masters-buyer-types` | — | `buyertype.view` |
+| *SETTINGS / Masters* | Organization List | Sub-Item | `/masters/company-list` | `masters-company-list` | — | `organizationlist.view` |
+| **SETTINGS** | Organization Settings | Direct | `/organization` | `organization` | `settings` | `organization.manage` |
+| **SETTINGS** | Audit Log | Direct | `/audit` | `audit` | `clock` | `audit.view` |
+| **SETTINGS** | Trash | Direct | `/trash` | `trash` | `trash` | `trash.view` |
+
+### Sidebar Accordion Navigation Test Checklist
+- [ ] Verify `Masters ▾` renders in the `SETTINGS` group with a right-chevron `>` and person-plus icon.
+- [ ] Verify clicking `Masters` smoothly expands all 12 nested master links, rotating chevron to `∨`.
+- [ ] Verify clicking on any master sub-item (e.g., `Cities`) routes correctly and renders that master page.
+- [ ] Verify active master sub-item displays highlighted background (`#e0edff`) and bold `#0061f2` text.
+- [ ] Verify the parent `Masters` item retains `.active-parent` blue styling while any child is active.
+- [ ] Verify reloading the page or deep-linking to any master page (e.g., `/masters/hsn`) automatically keeps `Masters` expanded on load.
+- [ ] Verify collapsing the entire sidebar via `≡` hides sub-items cleanly and uncollapses when `Masters` icon is clicked.
+- [ ] Verify `Product Master`, `Product Gallery`, `Suppliers`, `Buyers`, and `Inquiries` remain directly visible as primary top-level menu items.
+
 
 ---
 
