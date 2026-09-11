@@ -1,7 +1,7 @@
 # Enterprise ERP System — Unified Architecture, Feature & Technical Manual
 
 > **System Version:** 1.1.0 (Production)  
-> **Last Updated:** September 10, 2026 (Consolidated Collapsible Masters Accordion in Sidebar; Top-level Inquiries, Products, Suppliers & Buyers; Inquiry Lifecycle Tabs & Bulk Actions; zero regression)  
+> **Last Updated:** September 11, 2026 (Product Price Directory Top Filters & Openpyxl Filter-Aware Export; Supplier Contact Drawer Portal & Animation Fixes; Unified Living Documentation)  
 > **Repository:** `https://github.com/rupeshinhyma-oss/Yinglima_ERP.git`  
 > **Architectural Pattern:** Modular Async Monolith (FastAPI) + React 18 SPA (Vite) + Real-Time WebSocket Event Bus  
 > **Target Audience:** Systems Architects, Software Engineers, DevOps, and Autonomous AI Coding Assistants.  
@@ -491,9 +491,16 @@ A user may be assigned any number of Roles simultaneously (`POST /users/{id}/rol
   - Main row displays Product Photo, Name, Code, Category, Brand, Best Price badge (green if priced, amber if unpriced), and Primary Supplier with an interactive `[ N Suppliers ▾ ]` badge.
   - Expanding a row renders a dedicated comparison sub-table detailing every vendor who quoted that SKU: Supplier Name, Location, Quoted Price, Currency, MOQ, Notes/Terms, and Quote Date.
   - Includes an inline quick-add quote bar (`+ Add Another Supplier Quote:`) to link additional suppliers and prices directly within the table.
-- **Product Drawer Deep-Linking:** Clicking any product name or code opens the full `SideDrawer` displaying high-resolution photos, packaging dimensions (L x W x H cm), weights, auto-computed CBM, HSN code, refund VAT %, and required license/certificate alerts.
-- **Universal Bulk Import & Export:**
-  - Excel (`.xlsx`) and CSV (`.csv`) export via `GET /api/v1/inventory/product-prices/export`.
+- **Products Master Aligned Top Filter Toolbar:**
+  - **Funnel Toggle Button (`filterOpen`):** Dedicated header action button styled in active blue (`#0061f2`) or slate (`#475569`) that toggles an expandable filter panel above the table card.
+  - **Expandable Filter Panel:** Renders `Category` (scoped to product categories), `Sub Category` (dynamically scoped to selected Category), `Brand` (brands lookup), `Pricing Status` (`All`, `Priced Items Only`, `Unpriced Items Only`), and action buttons `[Reset]` (clears all filters and search) and `[Search]` (triggers query execution).
+  - **Integrated Table Toolbar:** Relocated the catalog search bar with instant `✕` clear and the `Items/Page` selector (`10`, `50`, `100`) into the table card's top bar, matching the Products Master layout.
+- **Universal Filter-Aware Bulk Export Engine (`GET /api/v1/inventory/product-prices/export`):**
+  - **`📥 Export ▾` Dropdown:** Header toolbar dropdown supporting `📊 Export to Excel (.xlsx)` and `📄 Export to CSV (.csv)` with live loading feedback (`⏳ Exporting...`).
+  - **Filter Awareness:** Respects active filters (`search`, `category_id`, `sub_category_id`, `brand_id`, `has_price`). If filtered, exports the filtered subset; if unfiltered, streams the entire directory catalog (up to 50,000 products, eliminating the former 200-row limit).
+  - **Openpyxl Corporate Styling:** Dark Corporate Navy (`#1E3A8A`) headers with bold white text, frozen top row (`A2`), Excel auto-filters across all headers, alternating zebra striping (`#F8FAFC`), currency number formatting (`#,##0.00`), and auto-fitted column dimensions.
+  - **Authenticated Direct Download:** Employs `downloadExport` with Bearer tokens and direct blob downloads to prevent popup blockers and blank browser tabs.
+- **Universal Bulk Import & Sample Template:**
   - Universal bulk Excel import via `POST /api/v1/inventory/product-prices/import` with in-memory product/supplier resolution, price validation, and error reporting.
   - Sample template download via `GET /api/v1/inventory/product-prices/sample-template`.
 
