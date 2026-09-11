@@ -1075,31 +1075,29 @@ export function ProductPricesPage() {
                           {/* Product Name & Code */}
                           <td style={{ padding: "12px 14px" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                              {/* Photo thumbnail */}
-                              <div
-                                style={{
-                                  width: "40px",
-                                  height: "40px",
-                                  borderRadius: "6px",
-                                  background: "#f1f5f9",
-                                  border: "1px solid #e2e8f0",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  overflow: "hidden",
-                                  flexShrink: 0,
-                                }}
-                              >
-                                {row.images && row.images.length > 0 ? (
+                              {/* Photo thumbnail (shown only when product has an image) */}
+                              {row.images && row.images.length > 0 && (
+                                <div
+                                  style={{
+                                    width: "38px",
+                                    height: "38px",
+                                    borderRadius: "6px",
+                                    background: "#f1f5f9",
+                                    border: "1px solid #e2e8f0",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    overflow: "hidden",
+                                    flexShrink: 0,
+                                  }}
+                                >
                                   <img
                                     src={resolveImageUrl(row.images[0])}
                                     alt="Thumb"
                                     style={{ width: "100%", height: "100%", objectFit: "cover" }}
                                   />
-                                ) : (
-                                  <span style={{ fontSize: "18px", color: "#94a3b8" }}>📦</span>
-                                )}
-                              </div>
+                                </div>
+                              )}
 
                               <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
                                 <button
@@ -1763,13 +1761,12 @@ export function ProductPricesPage() {
                     background: "#eff6ff",
                     border: "1px solid #bfdbfe",
                     borderRadius: "6px",
-                    padding: "12px",
+                    padding: "12px 14px",
                     display: "flex",
                     alignItems: "center",
                     gap: "10px",
                   }}
                 >
-                  <span style={{ fontSize: "20px" }}>📦</span>
                   <div>
                     <div style={{ fontWeight: 700, color: "#1e3a8a", fontSize: "14px" }}>
                       {assignModalProduct.product_name_tally || assignModalProduct.product_name}
