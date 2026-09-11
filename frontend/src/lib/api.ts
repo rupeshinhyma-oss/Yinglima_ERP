@@ -636,7 +636,8 @@ export async function downloadExport(
   fileBaseName: string,
   options: { signal?: AbortSignal } = {}
 ): Promise<void> {
-  const path = `${apiBase}/export?format=${format}`;
+  const [base, query] = apiBase.split("?");
+  const path = `${base}/export?format=${format}${query ? `&${query}` : ""}`;
 
   const doDownload = async (): Promise<Response> => {
     const token = Auth.getAccessToken();

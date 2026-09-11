@@ -151,10 +151,22 @@ async def delete_supplier_price(
 @router.get("/export", summary="Export product prices to Excel or CSV")
 async def export_product_prices(
     format: str = Query(default="xlsx", regex="^(xlsx|csv)$"),
+    search: str | None = Query(default=None),
+    category_id: uuid.UUID | None = Query(default=None),
+    sub_category_id: uuid.UUID | None = Query(default=None),
+    brand_id: uuid.UUID | None = Query(default=None),
+    has_price: bool | None = Query(default=None),
     service: ProductPriceService = Depends(get_service),
     _current_user: CurrentUser = Depends(require_permission("product.export")),
 ) -> Response:
-    content, media_type, filename = await service.export_prices(format)
+    content, media_type, filename = await service.export_prices(
+        file_format=format,
+        search=search,
+        category_id=category_id,
+        sub_category_id=sub_category_id,
+        brand_id=brand_id,
+        has_price=has_price,
+    )
     return Response(
         content=content,
         media_type=media_type,

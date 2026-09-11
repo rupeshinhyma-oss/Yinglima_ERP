@@ -38,3 +38,6 @@ uploads/
 *.exe
 ~$*
 .~lock.*
+
+# Local scratch scripts and artifacts
+scratch/

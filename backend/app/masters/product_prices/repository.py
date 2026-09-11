@@ -47,7 +47,7 @@ class ProductPriceRepository:
         Returns (items, total_count).
         """
         page = max(1, page)
-        page_size = max(1, min(200, page_size))
+        page_size = max(1, min(50000, page_size))
         offset = (page - 1) * page_size
 
         filter_clauses = ["p.deleted_at IS NULL"]

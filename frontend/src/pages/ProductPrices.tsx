@@ -6,14 +6,14 @@
  * Implements Option 1: Best Price Main Row + Expandable Accordion Sub-table.
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { Breadcrumb } from "@/components/Breadcrumb";
 import { Pagination } from "@/components/Pagination";
 import { SideDrawer, DetailFieldGrid } from "@/components/SideDrawer";
 import { Banner, Modal } from "@/components/ui";
 import { SearchableDropdown } from "@/components/SearchableDropdown";
-import { apiDelete, apiGet, apiPatch, apiPost, apiPostMultipart, API_ORIGIN, toQueryString } from "@/lib/api";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPostMultipart, API_ORIGIN, downloadExport, toQueryString } from "@/lib/api";
 import { useLookup } from "@/lib/lookups";
 import type { Brand, Hsn, Product, ProductCategory, ProductSubCategory, Uom } from "@/types";
 
@@ -110,6 +110,10 @@ export function ProductPricesPage() {
   const [subCategoryFilter, setSubCategoryFilter] = useState<string>("");
   const [brandFilter, setBrandFilter] = useState<string>("");
   const [pricingStatusFilter, setPricingStatusFilter] = useState<"all" | "priced" | "unpriced">("all");
+  const [filterOpen, setFilterOpen] = useState<boolean>(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState<boolean>(false);
+  const [exporting, setExporting] = useState<boolean>(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
   const [sortBy, setSortBy] = useState<string>("product_name_tally");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -238,6 +242,17 @@ export function ProductPricesPage() {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchTerm, debouncedSearch]);
+
+  // Close export dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setExportMenuOpen(false);
+      }
+    }
+    if (exportMenuOpen) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [exportMenuOpen]);
 
   // Scoped subcategories
   const scopedSubCategories = useMemo(() => {
@@ -726,9 +741,31 @@ export function ProductPricesPage() {
     setDrawerProduct(null);
   };
 
-  // Export
-  const handleExport = (format: "xlsx" | "csv") => {
-    window.open(`${API_ORIGIN}/api/v1/inventory/product-prices/export?format=${format}`, "_blank");
+  // Export with active filters and direct file download
+  const handleExport = async (format: "xlsx" | "csv") => {
+    setExporting(true);
+    setError(null);
+    try {
+      const params: Record<string, string> = {};
+      if (categoryFilter) params.category_id = categoryFilter;
+      if (subCategoryFilter) params.sub_category_id = subCategoryFilter;
+      if (brandFilter) params.brand_id = brandFilter;
+      if (pricingStatusFilter === "priced") params.has_price = "true";
+      else if (pricingStatusFilter === "unpriced") params.has_price = "false";
+      if (debouncedSearch.trim()) params.search = debouncedSearch.trim();
+
+      const queryStr = toQueryString(params);
+      await downloadExport(
+        `/inventory/product-prices${queryStr ? queryStr : ""}`,
+        format,
+        "product_prices"
+      );
+      setSuccess(`Product prices exported successfully (${format.toUpperCase()}).`);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setExporting(false);
+    }
   };
 
   // Bulk Import
@@ -775,33 +812,197 @@ export function ProductPricesPage() {
 
           {/* Action Toolbar */}
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+            {/* Export and Bulk Import options temporarily hidden per user request */}
+            {false && (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => handleExport("xlsx")}
+                  title="Export complete pricing directory to Excel"
+                >
+                  📊 Export Excel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => handleExport("csv")}
+                  title="Export complete pricing directory to CSV"
+                >
+                  📄 Export CSV
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setImportModalOpen(true);
+                    setImportResult(null);
+                    setImportFile(null);
+                  }}
+                >
+                  📥 Bulk Import Prices
+                </button>
+              </>
+            )}
+            {/* Filter Funnel Toggle */}
             <button
               type="button"
-              className="btn btn-secondary"
-              onClick={() => handleExport("xlsx")}
-              title="Export complete pricing directory to Excel"
-            >
-              📊 Export Excel
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => handleExport("csv")}
-              title="Export complete pricing directory to CSV"
-            >
-              📄 Export CSV
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => {
-                setImportModalOpen(true);
-                setImportResult(null);
-                setImportFile(null);
+              className="btn"
+              style={{
+                background: filterOpen ? "#0061f2" : "#475569",
+                color: "#ffffff",
+                padding: "6px 12px",
+                borderRadius: "6px",
+                border: "none",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
               }}
+              onClick={() => setFilterOpen((v) => !v)}
+              title="Toggle Filter Options"
             >
-              📥 Bulk Import Prices
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+              </svg>
             </button>
+
+            {/* Export Dropdown */}
+            <div ref={exportMenuRef} style={{ position: "relative", display: "inline-block" }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setExportMenuOpen((v) => !v)}
+                disabled={exporting}
+                style={{
+                  background: "#ffffff",
+                  color: "#1e293b",
+                  border: "1px solid #cbd5e1",
+                  padding: "6px 14px",
+                  borderRadius: "6px",
+                  fontWeight: 600,
+                  fontSize: "13px",
+                  cursor: exporting ? "wait" : "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                }}
+                title="Export complete pricing directory"
+              >
+                {exporting ? (
+                  <>
+                    <span style={{ fontSize: "12px" }}>⏳</span>
+                    <span>Exporting...</span>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ fontSize: "14px" }}>📥</span>
+                    <span>Export</span>
+                    <span style={{ fontSize: "10px", color: "#64748b", marginLeft: "2px" }}>▼</span>
+                  </>
+                )}
+              </button>
+
+              {exportMenuOpen && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    right: 0,
+                    marginTop: "6px",
+                    background: "#ffffff",
+                    borderRadius: "8px",
+                    boxShadow: "0 10px 25px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.06)",
+                    border: "1px solid #e2e8f0",
+                    zIndex: 1000,
+                    minWidth: "220px",
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: "8px 14px",
+                      background: "#f8fafc",
+                      borderBottom: "1px solid #e2e8f0",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#64748b",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.5px",
+                    }}
+                  >
+                    Export Options {totalItems > 0 && `(${totalItems.toLocaleString()} Products)`}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExportMenuOpen(false);
+                      handleExport("xlsx");
+                    }}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "10px 14px",
+                      fontSize: "13px",
+                      color: "#1e293b",
+                      fontWeight: 600,
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#f1f5f9")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                  >
+                    <span style={{ fontSize: "18px" }}>📊</span>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>Export to Excel (.xlsx)</div>
+                      <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 400 }}>
+                        Styled spreadsheet with auto-filters
+                      </div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExportMenuOpen(false);
+                      handleExport("csv");
+                    }}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "10px 14px",
+                      fontSize: "13px",
+                      color: "#1e293b",
+                      fontWeight: 600,
+                      background: "none",
+                      border: "none",
+                      borderTop: "1px solid #f1f5f9",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#f1f5f9")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                  >
+                    <span style={{ fontSize: "18px" }}>📄</span>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>Export to CSV (.csv)</div>
+                      <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 400 }}>
+                        Universal comma-separated format
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Refresh Button */}
             <button
               type="button"
               className="btn btn-small"
@@ -815,183 +1016,185 @@ export function ProductPricesPage() {
 
         <Banner error={error} success={success} />
 
-        {/* Filters Card */}
-        <div
-          className="card"
-          style={{
-            marginBottom: "20px",
-            padding: "16px 20px",
-            background: "#ffffff",
-            borderRadius: "8px",
-            border: "1px solid #e2e8f0",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-          }}
-        >
+        {/* Expandable Filter Box matching Products Master Design */}
+        {filterOpen && (
           <div
+            className="card"
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-              gap: "14px",
+              padding: "14px 18px",
+              marginBottom: "14px",
+              background: "#ffffff",
+              borderRadius: "8px",
+              border: "1px solid #e2e8f0",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+              display: "flex",
               alignItems: "flex-end",
+              justifyContent: "space-between",
+              gap: "16px",
+              flexWrap: "wrap",
             }}
           >
-            {/* Search Input */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px", gridColumn: "span 2" }}>
-              <label style={{ fontSize: "12.5px", fontWeight: 600, color: "#334155" }}>
-                Search Catalog
-              </label>
-              <div style={{ position: "relative" }}>
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search code, name, barcode, or supplier..."
-                  style={{
-                    width: "100%",
-                    padding: "9px 12px 9px 34px",
-                    borderRadius: "6px",
-                    border: "1px solid #cbd5e1",
-                    fontSize: "13.5px",
-                    outline: "none",
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", flex: 1, alignItems: "flex-end" }}>
+              {/* Category Filter */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "13px", fontWeight: 600, color: "#334155" }}>Category</label>
+                <select
+                  value={categoryFilter}
+                  onChange={(e) => {
+                    setCategoryFilter(e.target.value);
+                    setSubCategoryFilter("");
+                    setPage(1);
                   }}
-                />
-                <span
                   style={{
-                    position: "absolute",
-                    left: "10px",
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    color: "#94a3b8",
-                    fontSize: "14px",
+                    padding: "9px 12px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e0",
+                    fontSize: "13.5px",
+                    background: "#ffffff",
+                    color: "#1e293b",
+                    width: "100%",
                   }}
                 >
-                  🔍
-                </span>
-                {searchTerm && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchTerm("")}
-                    style={{
-                      position: "absolute",
-                      right: "10px",
-                      top: "50%",
-                      transform: "translateY(-50%)",
-                      background: "transparent",
-                      border: "none",
-                      cursor: "pointer",
-                      color: "#94a3b8",
-                      fontSize: "14px",
-                    }}
-                  >
-                    ✕
-                  </button>
-                )}
+                  <option value="">All</option>
+                  {categories.items.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Sub Category Filter */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "13px", fontWeight: 600, color: "#334155" }}>Sub Category</label>
+                <select
+                  value={subCategoryFilter}
+                  onChange={(e) => {
+                    setSubCategoryFilter(e.target.value);
+                    setPage(1);
+                  }}
+                  style={{
+                    padding: "9px 12px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e0",
+                    fontSize: "13.5px",
+                    background: "#ffffff",
+                    color: "#1e293b",
+                    width: "100%",
+                  }}
+                >
+                  <option value="">All</option>
+                  {scopedSubCategories.map((sc) => (
+                    <option key={sc.id} value={sc.id}>
+                      {sc.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Brand Filter */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "13px", fontWeight: 600, color: "#334155" }}>Brand</label>
+                <select
+                  value={brandFilter}
+                  onChange={(e) => {
+                    setBrandFilter(e.target.value);
+                    setPage(1);
+                  }}
+                  style={{
+                    padding: "9px 12px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e0",
+                    fontSize: "13.5px",
+                    background: "#ffffff",
+                    color: "#1e293b",
+                    width: "100%",
+                  }}
+                >
+                  <option value="">All</option>
+                  {brands.items.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Pricing Status Filter */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "13px", fontWeight: 600, color: "#334155" }}>Pricing Status</label>
+                <select
+                  value={pricingStatusFilter}
+                  onChange={(e) => {
+                    setPricingStatusFilter(e.target.value as any);
+                    setPage(1);
+                  }}
+                  style={{
+                    padding: "9px 12px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e0",
+                    fontSize: "13.5px",
+                    background: "#ffffff",
+                    color: "#1e293b",
+                    width: "100%",
+                  }}
+                >
+                  <option value="all">All</option>
+                  <option value="priced">Priced Items Only</option>
+                  <option value="unpriced">Unpriced Items Only</option>
+                </select>
               </div>
             </div>
 
-            {/* Category Filter */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              <label style={{ fontSize: "12.5px", fontWeight: 600, color: "#334155" }}>Category</label>
-              <select
-                value={categoryFilter}
-                onChange={(e) => {
-                  setCategoryFilter(e.target.value);
+            {/* Filter Actions */}
+            <div style={{ display: "flex", gap: "10px", alignItems: "flex-end", flexShrink: 0 }}>
+              <button
+                type="button"
+                style={{
+                  padding: "8px 18px",
+                  borderRadius: "6px",
+                  border: "none",
+                  background: "#64748b",
+                  color: "#ffffff",
+                  fontWeight: 600,
+                  fontSize: "13px",
+                  cursor: "pointer",
+                }}
+                onClick={() => {
+                  setCategoryFilter("");
                   setSubCategoryFilter("");
+                  setBrandFilter("");
+                  setPricingStatusFilter("all");
+                  setSearchTerm("");
+                  setDebouncedSearch("");
                   setPage(1);
                 }}
-                style={{
-                  padding: "9px 12px",
-                  borderRadius: "6px",
-                  border: "1px solid #cbd5e1",
-                  fontSize: "13.5px",
-                  background: "#fff",
-                }}
               >
-                <option value="">All Categories</option>
-                {categories.items.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Sub Category Filter */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              <label style={{ fontSize: "12.5px", fontWeight: 600, color: "#334155" }}>Sub-Category</label>
-              <select
-                value={subCategoryFilter}
-                onChange={(e) => {
-                  setSubCategoryFilter(e.target.value);
+                Reset
+              </button>
+              <button
+                type="button"
+                style={{
+                  padding: "8px 18px",
+                  borderRadius: "6px",
+                  border: "none",
+                  background: "#f59e0b",
+                  color: "#ffffff",
+                  fontWeight: 600,
+                  fontSize: "13px",
+                  cursor: "pointer",
+                }}
+                onClick={() => {
+                  setDebouncedSearch(searchTerm);
                   setPage(1);
-                }}
-                style={{
-                  padding: "9px 12px",
-                  borderRadius: "6px",
-                  border: "1px solid #cbd5e1",
-                  fontSize: "13.5px",
-                  background: "#fff",
+                  fetchPrices();
                 }}
               >
-                <option value="">All Sub-Categories</option>
-                {scopedSubCategories.map((sc) => (
-                  <option key={sc.id} value={sc.id}>
-                    {sc.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Brand Filter */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              <label style={{ fontSize: "12.5px", fontWeight: 600, color: "#334155" }}>Brand</label>
-              <select
-                value={brandFilter}
-                onChange={(e) => {
-                  setBrandFilter(e.target.value);
-                  setPage(1);
-                }}
-                style={{
-                  padding: "9px 12px",
-                  borderRadius: "6px",
-                  border: "1px solid #cbd5e1",
-                  fontSize: "13.5px",
-                  background: "#fff",
-                }}
-              >
-                <option value="">All Brands</option>
-                {brands.items.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Price Status Filter */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              <label style={{ fontSize: "12.5px", fontWeight: 600, color: "#334155" }}>Pricing Status</label>
-              <select
-                value={pricingStatusFilter}
-                onChange={(e) => {
-                  setPricingStatusFilter(e.target.value as any);
-                  setPage(1);
-                }}
-                style={{
-                  padding: "9px 12px",
-                  borderRadius: "6px",
-                  border: "1px solid #cbd5e1",
-                  fontSize: "13.5px",
-                  background: "#fff",
-                }}
-              >
-                <option value="all">All Items</option>
-                <option value="priced">Priced Items Only</option>
-                <option value="unpriced">Unpriced Items Only</option>
-              </select>
+                Search
+              </button>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Main Product Table */}
         <div
@@ -1004,6 +1207,90 @@ export function ProductPricesPage() {
             boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
           }}
         >
+          {/* Table Card Toolbar matching Products Master */}
+          <div
+            className="toolbar"
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: "10px 16px",
+              gap: "10px",
+              flexWrap: "wrap",
+              borderBottom: "1px solid #e2e8f0",
+            }}
+          >
+            {/* Items Per Page */}
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(1);
+                }}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "6px",
+                  border: "1px solid #cbd5e1",
+                  fontSize: "13px",
+                  background: "#ffffff",
+                }}
+              >
+                <option value={10}>10</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+              <span style={{ fontSize: "13px", color: "#64748b", fontWeight: 500 }}>Items/Page</span>
+            </div>
+
+            {/* Search Input Box */}
+            <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+              <input
+                type="text"
+                placeholder="Search code, name, barcode, or supplier..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{
+                  padding: "8px 36px 8px 34px",
+                  borderRadius: "6px",
+                  border: "1px solid #cbd5e1",
+                  width: "320px",
+                  maxWidth: "100%",
+                  fontSize: "13px",
+                  outline: "none",
+                }}
+              />
+              <span
+                style={{
+                  position: "absolute",
+                  left: "10px",
+                  color: "#94a3b8",
+                  fontSize: "13px",
+                  pointerEvents: "none",
+                }}
+              >
+                🔍
+              </span>
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm("")}
+                  title="Clear search"
+                  style={{
+                    position: "absolute",
+                    right: "8px",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "#94a3b8",
+                    fontSize: "14px",
+                  }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
           <div style={{ overflowX: "auto" }}>
             <table className="table" style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>

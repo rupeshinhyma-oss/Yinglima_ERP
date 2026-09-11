@@ -7,6 +7,8 @@ import uuid
 from typing import Any
 
 from openpyxl import Workbook, load_workbook  # type: ignore[import-untyped]
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side  # type: ignore[import-untyped]
+from openpyxl.utils import get_column_letter  # type: ignore[import-untyped]
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -76,48 +78,160 @@ class ProductPriceService:
         await self.repo.delete_supplier_price(link_id)
         await self.session.flush()
 
-    async def export_prices(self, file_format: str = "xlsx") -> tuple[bytes, str, str]:
-        """Export all products with their pricing details."""
-        items, _ = await self.repo.list_product_prices(page=1, page_size=10000, sort_by="product_name_tally")
+    async def export_prices(
+        self,
+        file_format: str = "xlsx",
+        search: str | None = None,
+        category_id: uuid.UUID | None = None,
+        sub_category_id: uuid.UUID | None = None,
+        brand_id: uuid.UUID | None = None,
+        has_price: bool | None = None,
+    ) -> tuple[bytes, str, str]:
+        """Export products with their pricing details (supports filtering and professional openpyxl styling)."""
+        items, _ = await self.repo.list_product_prices(
+            page=1,
+            page_size=50000,
+            search=search,
+            category_id=category_id,
+            sub_category_id=sub_category_id,
+            brand_id=brand_id,
+            has_price=has_price,
+            sort_by="product_name_tally",
+            sort_dir="asc",
+        )
         headers = [
-            "Sr No",
+            "Sr. No.",
             "Product Code",
-            "Product Name",
+            "Product Name (Tally)",
             "Category",
-            "Sub Category",
+            "Sub-Category",
             "Brand",
             "UOM",
             "Best Price",
             "Currency",
             "Primary Supplier",
             "Total Quoting Suppliers",
+            "Pricing Status",
         ]
 
-        rows: list[dict[str, Any]] = []
-        for idx, item in enumerate(items, start=1):
-            rows.append(
-                {
-                    "Sr No": idx,
-                    "Product Code": item.product_code or "",
-                    "Product Name": item.product_name_tally or item.product_name,
-                    "Category": item.category_name or "",
-                    "Sub Category": item.sub_category_name or "",
-                    "Brand": item.brand_name or "",
-                    "UOM": item.uom_code or "",
-                    "Best Price": f"{item.best_price:.2f}" if item.best_price is not None else "Unpriced",
-                    "Currency": item.best_currency or "CNY",
-                    "Primary Supplier": item.primary_supplier_name or "",
-                    "Total Quoting Suppliers": item.supplier_count,
-                }
-            )
-
         if file_format.lower() == "csv":
-            content = build_csv_export(headers, rows)
-            return content, "text/csv", "product_prices.csv"
+            rows: list[dict[str, Any]] = []
+            for idx, item in enumerate(items, start=1):
+                has_quote = item.best_price is not None
+                rows.append(
+                    {
+                        "Sr. No.": idx,
+                        "Product Code": item.product_code or "",
+                        "Product Name (Tally)": item.product_name_tally or item.product_name,
+                        "Category": item.category_name or "",
+                        "Sub-Category": item.sub_category_name or "",
+                        "Brand": item.brand_name or "",
+                        "UOM": item.uom_code or "",
+                        "Best Price": f"{item.best_price:.2f}" if has_quote else "Unpriced",
+                        "Currency": item.best_currency or "CNY",
+                        "Primary Supplier": item.primary_supplier_name or "",
+                        "Total Quoting Suppliers": item.supplier_count,
+                        "Pricing Status": "Priced" if has_quote else "Unpriced",
+                    }
+                )
+            csv_bytes = build_csv_export(headers, rows)
+            return csv_bytes, "text/csv", "product_prices.csv"
 
-        content = build_excel_export(headers, rows, sheet_title="Product Prices")
+        # Styled Excel Workbook
+        wb = Workbook()
+        ws = wb.active
+        if ws is None:
+            ws = wb.create_sheet(title="Product Prices")
+        else:
+            ws.title = "Product Prices"
+        ws.views.sheetView[0].showGridLines = True
+
+        ws.append(headers)
+
+        header_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")  # Corporate Dark Navy
+        header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
+        thin_side = Side(border_style="thin", color="CBD5E1")
+        border = Border(top=thin_side, bottom=thin_side, left=thin_side, right=thin_side)
+
+        ws.row_dimensions[1].height = 26
+
+        for col_idx in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col_idx)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = header_alignment
+            cell.border = border
+
+        even_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+        odd_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+        data_font = Font(name="Calibri", size=10, color="1E293B")
+
+        for row_idx, item in enumerate(items, start=2):
+            ws.row_dimensions[row_idx].height = 20
+            row_fill = even_fill if row_idx % 2 == 0 else odd_fill
+            has_quote = item.best_price is not None
+            best_price_val: float | str = float(item.best_price) if item.best_price is not None else "Unpriced"
+
+            row_data = [
+                row_idx - 1,
+                item.product_code or "—",
+                item.product_name_tally or item.product_name or "—",
+                item.category_name or "—",
+                item.sub_category_name or "—",
+                item.brand_name or "—",
+                item.uom_code or "—",
+                best_price_val,
+                item.best_currency or "CNY",
+                item.primary_supplier_name or "—",
+                item.supplier_count,
+                "Priced" if has_quote else "Unpriced",
+            ]
+            ws.append(row_data)
+
+            for col_idx in range(1, len(headers) + 1):
+                c = ws.cell(row=row_idx, column=col_idx)
+                c.fill = row_fill
+                c.font = data_font
+                c.border = border
+
+                if col_idx in (1, 2, 7, 9, 11, 12):
+                    c.alignment = Alignment(horizontal="center", vertical="center")
+                elif col_idx == 8:
+                    if has_quote:
+                        c.alignment = Alignment(horizontal="right", vertical="center")
+                        c.number_format = "#,##0.00"
+                    else:
+                        c.alignment = Alignment(horizontal="center", vertical="center")
+                        c.font = Font(name="Calibri", size=10, italic=True, color="94A3B8")
+                else:
+                    c.alignment = Alignment(horizontal="left", vertical="center")
+
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = ws.dimensions
+
+        for col in ws.columns:
+            max_len = 0
+            col_idx = col[0].column
+            if not isinstance(col_idx, int):
+                continue
+            col_letter = get_column_letter(col_idx)
+            for cell in col:
+                val = str(cell.value or "")
+                if len(val) > max_len:
+                    max_len = len(val)
+            ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
+
+        ws.column_dimensions["A"].width = 9   # Sr. No.
+        ws.column_dimensions["B"].width = 18  # Product Code
+        ws.column_dimensions["C"].width = 38  # Product Name
+        ws.column_dimensions["H"].width = 15  # Best Price
+        ws.column_dimensions["J"].width = 30  # Primary Supplier
+
+        buffer = io.BytesIO()
+        wb.save(buffer)
         return (
-            content,
+            buffer.getvalue(),
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "product_prices.xlsx",
         )

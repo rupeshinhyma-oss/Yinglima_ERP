@@ -230,16 +230,18 @@ Multi-tab comprehensive modal for vendor master lifecycle.
 
 #### Tab 2: 📇 Contacts Sub-Panel
 Manage complete vendor team directory:
-- **`+ Add Contact` Button**: Opens contact sub-form with:
-  - **Salutation**: `Mr.`, `Ms.`, `Mrs.`, `Dr.`
-  - **Person Name** (*Required*): Full name.
+- **`+ Add New` Button**: Opens portal-mounted right-side drawer modal (`createPortal` to `document.body` with `backdropFadeIn` and `slideInRight` smooth animations, `useBodyScrollLock`, and `Esc` key listener) with:
+  - **Salutation**: `Mr`, `Mr.`, `Mrs.`, `Ms.`
+  - **Person Name** (*Required*): Full name with auto-focus and native validation.
   - **Designation**: Role / title.
-  - **Handling Territory**: e.g., North America, India, Europe.
-  - **Calling Number**: Phone input with country dial code prefix.
-  - **WhatsApp Number**: With "Same as Calling" checkbox.
-  - **WeChat ID / Number**: With "Same as Calling" checkbox.
+  - **Handling Territory**: e.g., local, Export India, Export Africa, Export Global.
+  - **Calling Number**: Phone input with country dial code prefix indicator.
+  - **WhatsApp Number**: With "Same As Calling" sync checkbox.
+  - **WeChat ID / Number**: With "Same As Calling" sync checkbox.
   - **Email Address**: Direct email.
-- **Contacts Table**: Lists all contacts with `Primary Contact` badge, `Edit` button, and `Delete` button.
+  - **Country**: Country dropdown with automatic dial code resolution.
+  - **Footer Actions**: Pinned `Cancel` and full-width `Submit` button properly bound to form ID.
+- **Contacts Table**: Lists all contacts with territory, phone, WhatsApp, WeChat, email, `Edit` button, and `Delete` button.
 
 #### Tab 3: 📦 Products & Categories
 - **Product Categories**: Multi-select panel.
@@ -447,13 +449,17 @@ Manage complete vendor team directory:
 1. **Header & Summary:**
    - Heading: `Product Price Directory`
    - Total Counter Badge: `N Products`
-   - Action Buttons: `📊 Export Excel`, `📄 Export CSV`, `📥 Bulk Import Prices`, `🔄 Refresh`
-2. **Filters & Search Bar:**
-   - **Search Catalog Input:** Debounced (300ms) multi-attribute search matching product code, product name, Tally alias, barcode, or vendor company name.
-   - **Category Filter Dropdown:** All Categories or specific category filter.
-   - **Sub-Category Filter Dropdown:** Dynamic scoping to selected Category.
-   - **Brand Filter Dropdown:** All Brands or specific brand filter.
-   - **Pricing Status Dropdown:** `All Items`, `Priced Items Only`, `Unpriced Items Only`.
+   - Action Buttons: Filter Toggle Funnel button (`filterOpen` toggle styled `#0061f2` when active, `#475569` when closed), `📥 Export ▾` dropdown (`📊 Export to Excel (.xlsx)` with corporate navy header and auto-filters + `📄 Export to CSV (.csv)` with UTF-8 BOM, filter-aware up to 50,000 catalog items), `🔄 Refresh` (Bulk Import temporarily hidden).
+2. **Expandable Top Filter Box (matching Products Master):**
+   - Toggled open/closed by the header funnel button.
+   - **Category Filter Dropdown:** `All` or specific category from `/masters/product-categories`.
+   - **Sub-Category Filter Dropdown:** `All` or dynamically scoped sub-category from `/masters/product-sub-categories`.
+   - **Brand Filter Dropdown:** `All` or specific brand from `/masters/brands`.
+   - **Pricing Status Dropdown:** `All`, `Priced Items Only`, `Unpriced Items Only`.
+   - **Action Buttons:** `[Reset]` (grey `#64748b` - resets all filters and search) and `[Search]` (amber `#f59e0b` - triggers filter execution).
+3. **Table Card Toolbar:**
+   - **Items/Page Selector:** `10`, `50`, `100` items per page.
+   - **Search Catalog Input:** Debounced (300ms) multi-attribute search matching product code, product name, Tally alias, barcode, or vendor company name with `🔍` icon and instant `✕` clear button.
 3. **Main Table Columns:**
    - **Sr. No.:** Global 1-indexed running number across pages `((page - 1) * pageSize + idx + 1)`.
    - **Product Name & Code:**

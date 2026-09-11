@@ -15,6 +15,7 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import { AppShell } from "@/components/AppShell";
 import { Breadcrumb } from "@/components/Breadcrumb";
@@ -31,6 +32,7 @@ import {
 } from "@/components/SearchableDropdown";
 import { EmailTagInput, PhoneGroupField, SelectField, TextAreaField, TextField, WebsiteField, autoTitleCase } from "@/components/fields";
 import { useLookup } from "@/lib/lookups";
+import { useBodyScrollLock } from "@/lib/hooks";
 import { useLiveModule } from "@/lib/live/useLive";
 
 function resolveImageUrl(url: string | null | undefined): string {
@@ -828,6 +830,21 @@ export function SuppliersPage() {
   const [contactSameCallingWechat, setContactSameCallingWechat] = useState(false);
   const [drawerError, setDrawerError] = useState<unknown>(null);
   const [contactSubmitting, setContactSubmitting] = useState(false);
+
+  // Lock background scroll when contact drawer is active
+  useBodyScrollLock(contactFormOpen);
+
+  // Close contact drawer on Escape key
+  useEffect(() => {
+    if (!contactFormOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setContactFormOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [contactFormOpen]);
 
   useEffect(() => {
     if (!contactCountryId) {
@@ -1789,8 +1806,8 @@ export function SuppliersPage() {
     setContactFormOpen(true);
   }
 
-  async function handleContactSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleContactSubmit(e?: React.FormEvent) {
+    if (e) e.preventDefault();
     setDrawerError(null);
 
     if (!currentSupplierId) return;
@@ -2996,72 +3013,86 @@ export function SuppliersPage() {
                 </div>
 
                 {/* RIGHT SIDE DRAWER MODAL FOR ADD/EDIT CONTACT */}
-                {contactFormOpen && (
-                  <div style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", justifyContent: "flex-end" }}>
-                    {/* Dark Backdrop Overlay */}
+                {contactFormOpen &&
+                  createPortal(
                     <div
-                      onClick={() => setContactFormOpen(false)}
+                      role="dialog"
+                      aria-modal="true"
+                      aria-label={contactForm.id ? "Edit Contact Person" : "Add New Contact"}
                       style={{
-                        position: "absolute",
+                        position: "fixed",
                         inset: 0,
-                        background: "rgba(15, 23, 42, 0.45)",
-                        backdropFilter: "blur(2px)",
-                        transition: "opacity 0.2s ease",
-                      }}
-                    />
-
-                    {/* Side Drawer Panel */}
-                    <div
-                      style={{
-                        position: "relative",
-                        width: "460px",
-                        maxWidth: "92vw",
-                        height: "100%",
-                        background: "#ffffff",
-                        boxShadow: "-8px 0 30px rgba(0, 0, 0, 0.18)",
+                        zIndex: 99999,
                         display: "flex",
-                        flexDirection: "column",
-                        zIndex: 10000,
+                        justifyContent: "flex-end",
                       }}
                     >
-                      {/* Drawer Header */}
+                      {/* Dark Backdrop Overlay with smooth fade */}
+                      <div
+                        onClick={() => setContactFormOpen(false)}
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          background: "rgba(15, 23, 42, 0.45)",
+                          backdropFilter: "blur(2px)",
+                          animation: "backdropFadeIn 0.2s ease forwards",
+                        }}
+                      />
+
+                      {/* Side Drawer Panel with smooth slide-in */}
                       <div
                         style={{
-                          padding: "18px 24px",
-                          borderBottom: "1px solid #e2e8f0",
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
+                          position: "relative",
+                          width: "460px",
+                          maxWidth: "92vw",
+                          height: "100%",
                           background: "#ffffff",
+                          boxShadow: "-8px 0 30px rgba(0, 0, 0, 0.18)",
+                          display: "flex",
+                          flexDirection: "column",
+                          zIndex: 100000,
+                          animation: "slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards",
                         }}
                       >
-                        <h3 style={{ fontSize: "17px", fontWeight: 700, color: "#0f172a", margin: 0 }}>
-                          {contactForm.id ? "Edit Contact Person" : "Add New Contact"}
-                        </h3>
-                        <button
-                          type="button"
-                          onClick={() => setContactFormOpen(false)}
+                        {/* Drawer Header */}
+                        <div
                           style={{
-                            background: "none",
-                            border: "none",
-                            fontSize: "20px",
-                            color: "#64748b",
-                            cursor: "pointer",
-                            padding: "4px 8px",
-                            borderRadius: "4px",
-                            lineHeight: 1,
+                            padding: "18px 24px",
+                            borderBottom: "1px solid #e2e8f0",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            background: "#ffffff",
                           }}
                         >
-                          ✕
-                        </button>
-                      </div>
+                          <h3 style={{ fontSize: "17px", fontWeight: 700, color: "#0f172a", margin: 0 }}>
+                            {contactForm.id ? "Edit Contact Person" : "Add New Contact"}
+                          </h3>
+                          <button
+                            type="button"
+                            onClick={() => setContactFormOpen(false)}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              fontSize: "20px",
+                              color: "#64748b",
+                              cursor: "pointer",
+                              padding: "4px 8px",
+                              borderRadius: "4px",
+                              lineHeight: 1,
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </div>
 
-                      {/* Drawer Form Content (Scrollable) */}
-                      <form
-                        autoComplete="none"
-                        onSubmit={(e) => { void handleContactSubmit(e); }}
-                        style={{ flex: 1, overflowY: "auto", padding: "24px", display: "flex", flexDirection: "column", gap: "18px" }}
-                      >
+                        {/* Drawer Form Content (Scrollable) */}
+                        <form
+                          id="supplier-contact-drawer-form"
+                          autoComplete="none"
+                          onSubmit={(e) => { void handleContactSubmit(e); }}
+                          style={{ flex: 1, overflowY: "auto", padding: "24px", display: "flex", flexDirection: "column", gap: "18px" }}
+                        >
                         {Boolean(drawerError) && (
                           <div style={{ marginBottom: "6px" }}>
                             <Banner error={drawerError} />
@@ -3380,9 +3411,9 @@ export function SuppliersPage() {
                           Cancel
                         </button>
                         <button
-                          type="button"
+                          type="submit"
+                          form="supplier-contact-drawer-form"
                           disabled={contactSubmitting}
-                          onClick={(e) => { void handleContactSubmit(e); }}
                           style={{
                             flex: 1,
                             padding: "11px",
@@ -3401,7 +3432,8 @@ export function SuppliersPage() {
                         </button>
                       </div>
                     </div>
-                  </div>
+                  </div>,
+                  document.body
                 )}
 
                 {/* CONTACTS LIST TABLE */}
