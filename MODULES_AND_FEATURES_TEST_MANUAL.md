@@ -488,9 +488,11 @@ Manage complete vendor team directory:
    - **Inline Quick-Add Row (`+ Add Another Supplier Quote:`):**
      - Supplier select dropdown + Unit Price input + Currency dropdown + MOQ input + `Save Quote` button.
      - **0ms Optimistic Sub-Table Injection:** Instantly appends the new quote to the sub-table, sorts ASC, updates the main row's best price badge and supplier count in 0ms, clears inputs immediately, and synchronizes with server in the background.
-5. **Modal: Assign Supplier & Price Quote (0ms Optimistic UI):**
-   - Form fields: Product Info summary banner, **Select Supplier Combobox** (Searchable autocomplete dropdown with instant type-to-filter, circular `✕` quick-clear button to wipe typed text/selection without manual backspacing, keyboard navigation, and auto-label resolution; *Required*), Unit Price (*Required*), Currency, MOQ, Notes/Remarks.
-   - **Instant 0ms Optimistic Save:** Submitting valid form immediately closes the modal (0ms), renders a green success toast, updates the main product row (new best price, currency, primary vendor, and incremented supplier count), updates open sub-table quotes in memory, and performs background server sync with graceful rollback on error.
+5. **Modal: Assign / Add Supplier Quote (Clean New Quote Entry & 0ms Optimistic UI):**
+   - **Context-Aware Dynamic Header & Clean Form:** When clicking `+ Quote` on a product that already has quotes, the modal title dynamically reads **"+ Add New Supplier Quotation"** and opens with **clean, blank inputs** (Supplier dropdown blank, Unit Price blank) ready for entering the next vendor's quotation without confusing pre-fills.
+   - **Current Benchmark Quote Banner:** When quotes already exist on a product, a green benchmark summary card renders prominently at the top of the modal (*"Current Lowest Benchmark: ¥ 150.00 (via Darsh Impex) • 1 Quote on file"*), giving the procurement user immediate comparison context.
+   - **Smart Supplier Duplicate / Update Notice:** If a supplier that has already quoted is selected in the dropdown, an amber notification immediately displays (*"ℹ️ Darsh Impex already has a quote on file (¥ 150.00). Entering a new price will update their quotation."*), and the button adapts to *"Update Supplier Quote"*. If a new vendor is selected, the button displays *"+ Add Supplier Quote"*.
+   - **Instant 0ms Optimistic Save:** Submitting a valid quotation closes the modal immediately (0ms), renders a green success toast, updates the main product row (new best price, currency, primary vendor, and incremented supplier count), updates open sub-table quotes in memory, and performs background server sync with graceful rollback on error.
 6. **Modal: Bulk Import Product Prices:**
    - Sample template link: `📥 Download Sample Price Template (.xlsx)`.
    - Drag & drop or click-to-browse `.xlsx` file upload.
