@@ -299,7 +299,31 @@ export function ProductPricesPage() {
     setLoadingQuotes((prev) => ({ ...prev, [productId]: true }));
     try {
       const { data } = await apiGet<SupplierQuote[]>(`/inventory/product-prices/${productId}/suppliers`);
-      setSupplierQuotes((prev) => ({ ...prev, [productId]: data || [] }));
+      const quotes = data || [];
+      setSupplierQuotes((prev) => ({ ...prev, [productId]: quotes }));
+
+      // Also keep the main row strictly synchronized with the database quotes
+      if (quotes.length > 0) {
+        const sorted = [...quotes].sort((a, b) => (a.unit_price ?? 999999) - (b.unit_price ?? 999999));
+        const best = sorted[0];
+        setItems((prev) =>
+          prev.map((r) => {
+            if (r.product_id === productId) {
+              return {
+                ...r,
+                best_price: best.unit_price,
+                best_currency: best.currency || r.best_currency,
+                primary_supplier_id: best.supplier_id,
+                primary_supplier_name: best.supplier_name,
+                primary_link_id: best.link_id,
+                supplier_count: quotes.length,
+                has_price: best.unit_price != null,
+              };
+            }
+            return r;
+          })
+        );
+      }
     } catch (err) {
       console.error(`Failed to load quotes for product ${productId}:`, err);
     } finally {
@@ -436,6 +460,7 @@ export function ProductPricesPage() {
             primary_supplier_name: newBestQuote ? newBestQuote.supplier_name : null,
             primary_link_id: newBestQuote ? newBestQuote.link_id : null,
             supplier_count: remainingQuotes.length,
+            has_price: newLowest != null,
           };
         }
         return row;
@@ -515,6 +540,7 @@ export function ProductPricesPage() {
             primary_supplier_id: isNewBest ? suppId : row.primary_supplier_id,
             primary_supplier_name: isNewBest ? resolvedSuppName : row.primary_supplier_name,
             supplier_count: newCount,
+            has_price: true,
           };
         }
         return row;
@@ -531,13 +557,22 @@ export function ProductPricesPage() {
     // 4. Background Sync with Server
     setSubTableSaving((prev) => ({ ...prev, [productId]: true }));
     try {
-      await apiPost("/inventory/product-prices/assign", {
+      const res = await apiPost<{ link_id: string }>("/inventory/product-prices/assign", {
         product_id: productId,
         supplier_id: suppId,
         unit_price: priceNum,
         currency: curr,
         moq: moqVal,
       });
+      if (res.data?.link_id) {
+        setItems((prev) =>
+          prev.map((r) =>
+            r.product_id === productId && (!r.primary_link_id || priceNum <= (r.best_price ?? 999999))
+              ? { ...r, primary_link_id: res.data!.link_id, has_price: true }
+              : r
+          )
+        );
+      }
       loadProductSuppliers(productId);
     } catch (err) {
       alert("Failed to add supplier quote: " + (err instanceof Error ? err.message : String(err)));
@@ -602,6 +637,7 @@ export function ProductPricesPage() {
             primary_supplier_id: isNewBest ? suppId : row.primary_supplier_id,
             primary_supplier_name: isNewBest ? resolvedSuppName : row.primary_supplier_name,
             supplier_count: newCount,
+            has_price: true,
           };
         }
         return row;
@@ -644,7 +680,7 @@ export function ProductPricesPage() {
 
     // 4. Background Sync with Server
     try {
-      await apiPost("/inventory/product-prices/assign", {
+      const res = await apiPost<{ link_id: string }>("/inventory/product-prices/assign", {
         product_id: productId,
         supplier_id: suppId,
         unit_price: priceVal,
@@ -652,6 +688,15 @@ export function ProductPricesPage() {
         moq: moqVal,
         notes: notesVal,
       });
+      if (res.data?.link_id) {
+        setItems((prev) =>
+          prev.map((r) =>
+            r.product_id === productId && (!r.primary_link_id || priceVal <= (r.best_price ?? 999999))
+              ? { ...r, primary_link_id: res.data!.link_id, has_price: true }
+              : r
+          )
+        );
+      }
       loadProductSuppliers(productId);
     } catch (err) {
       alert("Failed to assign supplier: " + (err instanceof Error ? err.message : String(err)));
@@ -1114,7 +1159,7 @@ export function ProductPricesPage() {
 
                           {/* Best Price (Inline Editable) */}
                           <td style={{ padding: "12px 14px" }}>
-                            {row.has_price ? (
+                            {row.has_price || row.best_price != null ? (
                               isEditingBestPrice ? (
                                 <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                                   <span style={{ fontSize: "13px", fontWeight: 700, color: "#16a34a" }}>
@@ -1176,7 +1221,7 @@ export function ProductPricesPage() {
                                 </div>
                               ) : (
                                 <div
-                                  onClick={() => startInlineEdit(row.primary_link_id!, row.best_price)}
+                                  onClick={() => row.primary_link_id ? startInlineEdit(row.primary_link_id, row.best_price) : openAssignModal(row)}
                                   style={{
                                     display: "inline-flex",
                                     alignItems: "center",
